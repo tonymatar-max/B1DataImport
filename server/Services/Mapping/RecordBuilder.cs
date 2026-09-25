@@ -21,7 +21,7 @@ public class RecordBuilder
         MappingSpec spec,
         List<Dictionary<string, object?>> groupRows,
         B1Entity entity,
-        LookupResolver? lookups,
+        Connectors.ITargetLookup? lookups,
         CancellationToken ct = default)
     {
         var errors = new List<string>();
@@ -78,7 +78,7 @@ public class RecordBuilder
 
     /// <summary>Produce one field's raw string value. Returns (value, error, skipRow).</summary>
     private async Task<(string? value, string? error, bool skip)> ResolveAsync(
-        FieldSpec f, Dictionary<string, object?> row, LookupResolver? lookups, CancellationToken ct)
+        FieldSpec f, Dictionary<string, object?> row, Connectors.ITargetLookup? lookups, CancellationToken ct)
     {
         string? raw = f.Transform switch
         {

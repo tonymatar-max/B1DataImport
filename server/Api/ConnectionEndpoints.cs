@@ -2,6 +2,7 @@ using B1DataImporter.Api.Data;
 using B1DataImporter.Api.Domain;
 using B1DataImporter.Api.Services;
 using B1DataImporter.Api.Services.B1;
+using B1DataImporter.Api.Services.Connectors.B1;
 using B1DataImporter.Api.Services.Jobs;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -84,7 +85,7 @@ public static class ConnectionEndpoints
             {
                 if (c.Kind == ConnectionKind.SapB1)
                 {
-                    using var client = new ServiceLayerClient(ScenarioExecutor.ToInfo(c, secrets));
+                    using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
                     await client.LoginAsync();
                 }
                 else
@@ -113,7 +114,7 @@ public static class ConnectionEndpoints
             if (c is null) return Results.NotFound();
             try
             {
-                using var client = new ServiceLayerClient(ScenarioExecutor.ToInfo(c, secrets));
+                using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
                 await client.LoginAsync();
                 var entities = meta.Parse(await client.GetMetadataAsync(), c.BaseUrl + "|" + c.CompanyDB);
                 return Results.Ok(entities.Select(e => new
@@ -134,7 +135,7 @@ public static class ConnectionEndpoints
             if (c is null) return Results.NotFound();
             try
             {
-                using var client = new ServiceLayerClient(ScenarioExecutor.ToInfo(c, secrets));
+                using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
                 await client.LoginAsync();
                 var entities = meta.Parse(await client.GetMetadataAsync(), c.BaseUrl + "|" + c.CompanyDB);
                 var e = entities.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));

@@ -5,6 +5,7 @@ using B1DataImporter.Api.Models;
 using B1DataImporter.Api.Services;
 using B1DataImporter.Api.Services.Ai;
 using B1DataImporter.Api.Services.B1;
+using B1DataImporter.Api.Services.Connectors.B1;
 using B1DataImporter.Api.Services.Jobs;
 using Microsoft.EntityFrameworkCore;
 
@@ -78,7 +79,7 @@ public static class ScenarioEndpoints
             if (c is null) return Results.NotFound();
             try
             {
-                using var client = new ServiceLayerClient(ScenarioExecutor.ToInfo(c, secrets));
+                using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
                 await client.LoginAsync();
                 var entities = meta.Parse(await client.GetMetadataAsync(), c.BaseUrl + "|" + c.CompanyDB);
                 var entity = entities.FirstOrDefault(e =>

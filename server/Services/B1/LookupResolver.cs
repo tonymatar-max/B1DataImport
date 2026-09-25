@@ -10,7 +10,7 @@ namespace B1DataImporter.Api.Services.B1;
 /// Results are cached for the lifetime of a run, so a 50k-row file with 6 warehouses
 /// costs 6 queries, not 50k.
 /// </summary>
-public class LookupResolver
+public class LookupResolver : Connectors.ITargetLookup
 {
     private readonly ServiceLayerClient _client;
     private readonly ConcurrentDictionary<string, string?> _cache = new();

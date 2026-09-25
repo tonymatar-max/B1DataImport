@@ -26,6 +26,12 @@ builder.Services.AddSingleton<MetadataService>();
 builder.Services.AddSingleton<SourceReaderFactory>();
 builder.Services.AddSingleton<AiMappingService>();
 
+// Target connectors: one ITargetConnector per system, resolved by ConnectionKind. Register a
+// new connector here (e.g. a manifest-driven REST connector) and the executor picks it up.
+builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.ITargetConnector,
+    B1DataImporter.Api.Services.Connectors.B1.B1TargetConnector>();
+builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.TargetConnectorRegistry>();
+
 builder.Services.AddSingleton<RunQueue>();
 builder.Services.AddSingleton<ScenarioExecutor>();
 builder.Services.AddHostedService<RunWorker>();

@@ -4,6 +4,7 @@ using B1DataImporter.Api.Domain;
 using B1DataImporter.Api.Models;
 using B1DataImporter.Api.Services;
 using B1DataImporter.Api.Services.B1;
+using B1DataImporter.Api.Services.Connectors;
 using B1DataImporter.Api.Services.Mapping;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,17 +12,18 @@ namespace B1DataImporter.Api.Services.Jobs;
 
 /// <summary>
 /// Executes one Run: pulls source rows, builds + validates payloads, resolves lookups,
-/// posts to B1 (batched), and records a per-row result so failures can be re-run.
-/// Progress is flushed to the DB after every batch so the UI can follow along.
+/// writes to the target (batched) via <see cref="ITargetSession"/>, and records a per-row
+/// result so failures can be re-run. Progress is flushed to the DB after every batch so the
+/// UI can follow along. The executor is target-agnostic: it obtains a session from the
+/// <see cref="TargetConnectorRegistry"/> and never references a specific system.
 /// </summary>
 public class ScenarioExecutor
 {
     private readonly IServiceScopeFactory _scopes;
     private readonly SourceReaderFactory _readers;
-    private readonly MetadataService _metadata;
+    private readonly TargetConnectorRegistry _connectors;
     private readonly ISecretProtector _secrets;
     private readonly RecordBuilder _builder = new();
-    private readonly PayloadValidator _validator = new();
     private readonly ILogger<ScenarioExecutor> _log;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -39,9 +41,9 @@ public class ScenarioExecutor
     };
 
     public ScenarioExecutor(IServiceScopeFactory scopes, SourceReaderFactory readers,
-        MetadataService metadata, ISecretProtector secrets, ILogger<ScenarioExecutor> log)
+        TargetConnectorRegistry connectors, ISecretProtector secrets, ILogger<ScenarioExecutor> log)
     {
-        _scopes = scopes; _readers = readers; _metadata = metadata; _secrets = secrets; _log = log;
+        _scopes = scopes; _readers = readers; _connectors = connectors; _secrets = secrets; _log = log;
     }
 
     public async Task ExecuteAsync(string runId, CancellationToken ct)
@@ -59,23 +61,22 @@ public class ScenarioExecutor
         run.StartedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
-        ServiceLayerClient? b1 = null;
+        ITargetSession? target = null;
         try
         {
-            var b1Conn = await db.Connections.FirstOrDefaultAsync(c => c.Id == scenario.B1ConnectionId, ct)
-                ?? throw new InvalidOperationException("B1 connection not found.");
+            var targetConn = await db.Connections.FirstOrDefaultAsync(c => c.Id == scenario.B1ConnectionId, ct)
+                ?? throw new InvalidOperationException("Target connection not found.");
             var srcConn = await db.Connections.FirstOrDefaultAsync(c => c.Id == scenario.SourceConnectionId, ct);
 
-            b1 = new ServiceLayerClient(ToInfo(b1Conn, _secrets));
-            await b1.LoginAsync(ct);
+            target = await _connectors.Get(targetConn.Kind).OpenAsync(targetConn, ct);
 
-            var entities = _metadata.Parse(await b1.GetMetadataAsync(ct), b1Conn.BaseUrl + "|" + b1Conn.CompanyDB);
+            var entities = await target.GetEntitiesAsync(ct);
             var entity = entities.FirstOrDefault(e =>
                 e.Name.Equals(scenario.TargetEntity, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException($"Target object '{scenario.TargetEntity}' not found in this company.");
 
             var spec = JsonSerializer.Deserialize<MappingSpec>(scenario.MappingJson, MappingReadOpts) ?? new MappingSpec();
-            var lookups = new LookupResolver(b1);
+            var lookups = target.Lookups;
             var required = spec.Header.Where(f => f.Required).Select(f => f.TargetField)
                 .Concat(spec.Lines.SelectMany(l => l.Fields).Where(f => f.Required).Select(f => f.TargetField))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -147,7 +148,7 @@ public class ScenarioExecutor
                         continue;
                     }
 
-                    var validationErrors = _validator.Validate(built.Payload!, entity, required);
+                    var validationErrors = target.Validate(built.Payload!, entity, required);
                     if (validationErrors.Count > 0)
                     {
                         item.Status = ItemStatus.Failed;
@@ -172,8 +173,8 @@ public class ScenarioExecutor
                         {
                             var matchProp = entity.Properties.FirstOrDefault(p =>
                                 p.Name.Equals(matchField, StringComparison.OrdinalIgnoreCase));
-                            keyPredicate = FormatODataKey(kv, matchProp);
-                            var exists = await b1.ExistsAsync(entity.Name, keyPredicate, ct);
+                            keyPredicate = target.FormatKeyPredicate(kv, matchProp);
+                            var exists = await target.ExistsAsync(entity.Name, keyPredicate, ct);
                             if (exists)
                             {
                                 method = "PATCH";
@@ -212,7 +213,7 @@ public class ScenarioExecutor
                         pending.Add((item, json, method, keyPredicate));
                         if (pending.Count >= Math.Max(1, scenario.BatchSize))
                         {
-                            await FlushAsync(b1, scenario, entity, keyProp, pending, run, db, ct);
+                            await FlushAsync(target, scenario, entity, keyProp, pending, run, db, ct);
                             pending.Clear();
                             await SaveProgressAsync(db, run, rowNumber, ct);
                             if (!scenario.ContinueOnError && run.Failed > 0) break;
@@ -232,7 +233,7 @@ public class ScenarioExecutor
             }
 
             if (pending.Count > 0 && !run.DryRun)
-                await FlushAsync(b1, scenario, entity, keyProp, pending, run, db, ct);
+                await FlushAsync(target, scenario, entity, keyProp, pending, run, db, ct);
 
             run.Total = rowNumber;
             run.Processed = run.Succeeded + run.Failed + run.Skipped;
@@ -261,31 +262,19 @@ public class ScenarioExecutor
             await FailAsync(db, run, ex.Message, CancellationToken.None);
             _log.LogError(ex, "Run {RunId} failed", run.Id);
         }
-        finally { b1?.Dispose(); }
+        finally { target?.Dispose(); }
     }
 
     /// <summary>Post a batch of built records and record each result.</summary>
     private static async Task FlushAsync(
-        ServiceLayerClient b1, Scenario scenario, B1Entity entity, string keyProp,
+        ITargetSession target, Scenario scenario, B1Entity entity, string keyProp,
         List<(RunItem item, string json, string method, string? keyPredicate)> pending,
         Run run, AppDbContext db, CancellationToken ct)
     {
-        List<WriteResult> results;
-
-        if (scenario.UseBatch && pending.Count > 1)
-        {
-            var ops = pending.Select((p, i) => new BatchOp(i + 1, p.method,
-                p.method == "PATCH" ? $"{entity.Name}({p.keyPredicate})" : entity.Name, p.json)).ToList();
-            results = await b1.BatchAsync(ops, keyProp, ct);
-        }
-        else
-        {
-            results = new List<WriteResult>();
-            foreach (var (_, json, method, keyPredicate) in pending)
-                results.Add(method == "PATCH"
-                    ? await b1.PatchAsync(entity.Name, keyPredicate!, json, ct)
-                    : await b1.PostAsync(entity.Name, json, keyProp, ct));
-        }
+        var ops = pending
+            .Select(p => new TargetWriteOp(p.item, p.json, p.method, p.keyPredicate))
+            .ToList();
+        var results = await target.WriteAsync(entity.Name, keyProp, ops, scenario.UseBatch, ct);
 
         for (int i = 0; i < pending.Count; i++)
         {
@@ -324,23 +313,6 @@ public class ScenarioExecutor
         run.FinishedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
     }
-
-    /// <summary>Format a key value as an OData key predicate: quoted for strings, raw for numbers.</summary>
-    private static string FormatODataKey(object value, B1Property? prop)
-    {
-        var s = value is JsonElement je ? je.ToString() : value.ToString() ?? "";
-        var isNumeric = prop?.Type is "Edm.Int16" or "Edm.Int32" or "Edm.Int64" or "Edm.Double" or "Edm.Decimal" or "Edm.Single";
-        return isNumeric ? s : $"'{s.Replace("'", "''")}'";
-    }
-
-    public static B1ConnectionInfo ToInfo(ConnectionDef c, ISecretProtector secrets) => new()
-    {
-        BaseUrl = c.BaseUrl ?? "",
-        CompanyDB = c.CompanyDB ?? "",
-        UserName = c.UserName ?? "",
-        Password = secrets.Unprotect(c.SecretProtected) ?? "",
-        IgnoreSslErrors = c.IgnoreSslErrors,
-    };
 
     private static SourceHandle BuildHandle(Scenario s, ConnectionDef? srcConn, ISecretProtector secrets)
     {
