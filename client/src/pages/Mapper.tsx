@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type {
   B1Entity, B1Property, FieldNote, FieldSpec, MappingSpec, SourceSchema, TransformKind,
 } from '../types'
@@ -16,6 +16,7 @@ export default function Mapper({ schema, entity, spec, setSpec, notes }: {
 }) {
   const [tab, setTab] = useState<string>('header')
   const [onlyMapped, setOnlyMapped] = useState(false)
+  const [view, setView] = useState<'table' | 'visual'>('table')
   const cols = schema.columns.map(c => c.name)
   const noteFor = useMemo(
     () => Object.fromEntries(notes.map(n => [n.targetField, n])), [notes])
@@ -88,10 +89,16 @@ export default function Mapper({ schema, entity, spec, setSpec, notes }: {
             </div>
           ))}
         </div>
-        <label className="inline small">
-          <input type="checkbox" checked={onlyMapped} onChange={e => setOnlyMapped(e.target.checked)} />
-          Mapped only
-        </label>
+        <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+          <label className="inline small">
+            <input type="checkbox" checked={onlyMapped} onChange={e => setOnlyMapped(e.target.checked)} />
+            Mapped only
+          </label>
+          <div className="viewtoggle">
+            <button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button>
+            <button className={view === 'visual' ? 'on' : ''} onClick={() => setView('visual')}>Visual</button>
+          </div>
+        </div>
       </div>
 
       {activeColl && (
@@ -101,6 +108,12 @@ export default function Mapper({ schema, entity, spec, setSpec, notes }: {
         </div>
       )}
 
+      {view === 'visual' && (
+        <VisualView key={tab} props={activeProps} list={activeList} patch={patch}
+          cols={cols} schema={schema} noteFor={noteFor} onlyMapped={onlyMapped} />
+      )}
+
+      {view === 'table' && (
       <div className="mapper">
         <div className="srccol">
           <div className="hd">Source columns ({cols.length})</div>
@@ -213,7 +226,227 @@ export default function Mapper({ schema, entity, spec, setSpec, notes }: {
           </table>
         </div>
       </div>
+      )}
     </>
+  )
+}
+
+// ---- Visual (connect-the-lines) view: same MappingSpec, drag a source column onto a target field ----
+
+type Line = { key: string; x1: number; y1: number; x2: number; y2: number; sel: boolean; field: string }
+
+function VisualView({ props, list, patch, cols, schema, noteFor, onlyMapped }: {
+  props: B1Property[]
+  list: FieldSpec[]
+  patch: (target: string, patch: Partial<FieldSpec>) => void
+  cols: string[]
+  schema: SourceSchema
+  noteFor: Record<string, FieldNote>
+  onlyMapped: boolean
+}) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const [lines, setLines] = useState<Line[]>([])
+  const [dims, setDims] = useState({ w: 0, h: 0 })
+  const [dragOver, setDragOver] = useState<string | null>(null)
+
+  const wrap = useRef<HTMLDivElement>(null)
+  const srcRefs = useRef<Map<string, HTMLElement>>(new Map())
+  const tgtRefs = useRef<Map<string, HTMLElement>>(new Map())
+
+  const getF = (target: string): FieldSpec =>
+    list.find(f => f.targetField === target) ??
+    { targetField: target, transform: 'Direct', required: false, skipRowIfEmpty: false }
+
+  const shownProps = props.filter(p => !onlyMapped || isMapped(getF(p.name)))
+
+  // Measure chip positions (relative to the wrapper) and build the connector lines.
+  useLayoutEffect(() => {
+    const compute = () => {
+      const box = wrap.current
+      if (!box) return
+      setDims({ w: box.offsetWidth, h: box.offsetHeight })
+      const next: Line[] = []
+      for (const p of shownProps) {
+        const f = getF(p.name)
+        if (!f.sourceColumn) continue
+        const s = srcRefs.current.get(f.sourceColumn)
+        const t = tgtRefs.current.get(p.name)
+        if (!s || !t) continue
+        next.push({
+          key: `${f.sourceColumn}->${p.name}`,
+          x1: s.offsetLeft + s.offsetWidth, y1: s.offsetTop + s.offsetHeight / 2,
+          x2: t.offsetLeft, y2: t.offsetTop + t.offsetHeight / 2,
+          sel: selected === p.name, field: p.name,
+        })
+      }
+      setLines(next)
+    }
+    compute()
+    const ro = new ResizeObserver(compute)
+    if (wrap.current) ro.observe(wrap.current)
+    window.addEventListener('resize', compute)
+    return () => { ro.disconnect(); window.removeEventListener('resize', compute) }
+  }, [list, props, cols, onlyMapped, selected])
+
+  const drop = (target: string, e: DragEvent) => {
+    e.preventDefault()
+    setDragOver(null)
+    const col = e.dataTransfer.getData('text/col')
+    if (!col) return
+    const f = getF(target)
+    // A dropped column always feeds a column-based transform; Constant/Expression don't use one.
+    const transform: TransformKind =
+      f.transform === 'Constant' || f.transform === 'Expression' ? 'Direct' : f.transform
+    patch(target, { sourceColumn: col, transform })
+    setSelected(target)
+  }
+
+  const selProp = props.find(p => p.name === selected) ?? null
+
+  return (
+    <div className="vmap-outer">
+      <div className="vmap" ref={wrap}>
+        <svg className="vmap-svg" width={dims.w} height={dims.h}>
+          {lines.map(l => (
+            <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+              className={`vmap-line ${l.sel ? 'sel' : ''}`}
+              onClick={() => setSelected(l.field)} />
+          ))}
+        </svg>
+
+        <div className="vmap-col">
+          <div className="hd">Source columns ({cols.length})</div>
+          {schema.columns.map(c => (
+            <div key={c.name} className="vchip src" draggable
+              ref={el => { if (el) srcRefs.current.set(c.name, el); else srcRefs.current.delete(c.name) }}
+              onDragStart={e => { e.dataTransfer.setData('text/col', c.name); e.dataTransfer.effectAllowed = 'link' }}
+              title={String(schema.previewRows[0]?.[c.name] ?? '')}>
+              <span className="nm">{c.name}</span>
+              <span className="s">{String(schema.previewRows[0]?.[c.name] ?? c.dataType).slice(0, 20)}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="vmap-col">
+          <div className="hd">Target fields ({shownProps.length})</div>
+          {shownProps.map(p => {
+            const f = getF(p.name)
+            const note = noteFor[p.name]
+            const mandatory = !p.nullable && !p.isKey
+            const mapped = isMapped(f)
+            return (
+              <div key={p.name}
+                ref={el => { if (el) tgtRefs.current.set(p.name, el); else tgtRefs.current.delete(p.name) }}
+                className={`vchip tgt ${mapped ? 'mapped' : ''} ${selected === p.name ? 'sel' : ''} ${dragOver === p.name ? 'over' : ''} ${mandatory && !mapped ? 'need' : ''}`}
+                onClick={() => setSelected(p.name)}
+                onDragOver={e => { e.preventDefault(); setDragOver(p.name) }}
+                onDragLeave={() => setDragOver(d => d === p.name ? null : d)}
+                onDrop={e => drop(p.name, e)}>
+                <span className="nm">
+                  {p.name}
+                  {mandatory && <span className="chip req">req</span>}
+                  {p.isKey && <span className="chip key">key</span>}
+                  {note && <span className={`conf ${note.confidence}`}>{note.confidence}</span>}
+                </span>
+                <span className="s">
+                  {f.transform === 'Constant' ? `= ${f.constantValue ?? '…'}`
+                    : f.transform === 'Expression' ? f.expression || 'expression…'
+                    : f.sourceColumn
+                      ? `${f.sourceColumn}${f.transform !== 'Direct' ? ` · ${f.transform}` : ''}`
+                      : <span className="muted">drop a column</span>}
+                </span>
+                {mapped && (
+                  <button className="x" title="Clear"
+                    onClick={ev => { ev.stopPropagation(); patch(p.name, { sourceColumn: null, transform: 'Direct', constantValue: null, expression: null }) }}>×</button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {selProp && (
+        <FieldEditor prop={selProp} f={getF(selProp.name)} cols={cols}
+          patch={p => patch(selProp.name, p)} onClose={() => setSelected(null)} />
+      )}
+    </div>
+  )
+}
+
+// Detail editor for the selected target field — same transforms as the table view.
+function FieldEditor({ prop, f, cols, patch, onClose }: {
+  prop: B1Property
+  f: FieldSpec
+  cols: string[]
+  patch: (patch: Partial<FieldSpec>) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="panel vmap-editor">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ margin: 0 }}>
+          {prop.name}{' '}
+          <span className="muted small">{prop.type.replace('Edm.', '')}{prop.maxLength ? `(${prop.maxLength})` : ''}</span>
+        </h3>
+        <button className="ghost sm" onClick={onClose}>Close</button>
+      </div>
+      <div className="row">
+        <div className="field"><label>Transform</label>
+          <select value={f.transform} onChange={e => patch({ transform: e.target.value as TransformKind })}>
+            {TRANSFORMS.map(t => <option key={t}>{t}</option>)}
+          </select></div>
+        {f.transform === 'Constant' ? (
+          <div className="field grow"><label>Value</label>
+            {prop.enumMembers?.length ? (
+              <select value={f.constantValue ?? ''} onChange={e => patch({ constantValue: e.target.value })}>
+                <option value="">— none —</option>
+                {prop.enumMembers.map(m => <option key={m}>{m}</option>)}
+              </select>
+            ) : (
+              <input value={f.constantValue ?? ''} placeholder="fixed value"
+                onChange={e => patch({ constantValue: e.target.value })} />
+            )}</div>
+        ) : f.transform === 'Expression' ? (
+          <div className="field grow"><label>Expression</label>
+            <input value={f.expression ?? ''} placeholder="{First} {Last|upper}"
+              onChange={e => patch({ expression: e.target.value })} /></div>
+        ) : (
+          <div className="field grow"><label>Source column</label>
+            <select value={f.sourceColumn ?? ''} onChange={e => patch({ sourceColumn: e.target.value || null })}>
+              <option value="">— not mapped —</option>
+              {cols.map(c => <option key={c} value={c}>{c}</option>)}
+            </select></div>
+        )}
+      </div>
+      {f.transform === 'DateFormat' && (
+        <div className="field"><label>Date format</label>
+          <input value={f.dateFormat ?? ''} placeholder="dd/MM/yyyy"
+            onChange={e => patch({ dateFormat: e.target.value })} /></div>
+      )}
+      {f.transform === 'B1Lookup' && (
+        <div className="row">
+          <div className="field grow"><label>Lookup entity</label>
+            <input value={f.b1Lookup?.entity ?? ''} placeholder="Warehouses"
+              onChange={e => patch({ b1Lookup: lk(f, { entity: e.target.value }) })} /></div>
+          <div className="field grow"><label>Match field</label>
+            <input value={f.b1Lookup?.matchField ?? ''} placeholder="WarehouseName"
+              onChange={e => patch({ b1Lookup: lk(f, { matchField: e.target.value }) })} /></div>
+          <div className="field grow"><label>Return field</label>
+            <input value={f.b1Lookup?.returnField ?? ''} placeholder="WarehouseCode"
+              onChange={e => patch({ b1Lookup: lk(f, { returnField: e.target.value }) })} /></div>
+        </div>
+      )}
+      {f.transform === 'StaticLookup' && (
+        <div className="field"><label>Value map (from=to, one per line)</label>
+          <textarea rows={3} placeholder={'Customer=cCustomer\nVendor=cSupplier'}
+            value={dictToText(f.staticLookup)}
+            onChange={e => patch({ staticLookup: textToDict(e.target.value) })} /></div>
+      )}
+      <label className="inline small" style={{ marginTop: 8 }}>
+        <input type="checkbox" checked={f.required ?? false}
+          onChange={e => patch({ required: e.target.checked })} /> Required
+      </label>
+    </div>
   )
 }
 
