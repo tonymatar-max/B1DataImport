@@ -1,6 +1,6 @@
 // Mirrors the backend Domain + Models types.
 
-export type ConnectionKind = 'SapB1' | 'SqlServer' | 'File'
+export type ConnectionKind = 'SapB1' | 'SqlServer' | 'File' | 'Rest'
 
 export interface ConnectionDef {
   id: string
@@ -9,11 +9,17 @@ export interface ConnectionDef {
   baseUrl?: string
   companyDB?: string
   userName?: string
+  connectorManifestId?: string
   ignoreSslErrors: boolean
   hasSecret: boolean
   lastTestedUtc?: string
   lastTestResult?: string
 }
+
+// GET /api/connectors — which target connectors + REST manifests are available.
+export interface ConnectorInfo { kind: string; displayName: string }
+export interface ManifestInfo { id: string; displayName: string }
+export interface ConnectorsResponse { connectors: ConnectorInfo[]; manifests: ManifestInfo[] }
 
 export interface SourceColumn { name: string; dataType: string; nullable: boolean }
 

@@ -28,7 +28,7 @@ export default function Scenarios({ go }: { go: (v: View) => void }) {
       <div className="page-head">
         <div>
           <h1>Scenarios</h1>
-          <p>Each scenario pulls from a source, maps it, and writes to a B1 object.</p>
+          <p>Each scenario pulls from a source, maps it, and writes to a target object.</p>
         </div>
         <button className="primary" onClick={() => go({ p: 'scenario', id: 'new' })}>New scenario</button>
       </div>
@@ -37,7 +37,7 @@ export default function Scenarios({ go }: { go: (v: View) => void }) {
 
       {!list.length ? (
         <Empty title="No scenarios yet">
-          A scenario is one integration: source → mapping → B1 object, run manually or on a schedule.
+          A scenario is one integration: source → mapping → target object, run manually or on a schedule.
         </Empty>
       ) : (
         <div className="panel" style={{ padding: 0 }}>

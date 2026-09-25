@@ -8,7 +8,7 @@ import type {
 } from '../types'
 
 const kindName = (k: ConnectionDef['kind']) =>
-  typeof k === 'number' ? ['SapB1', 'SqlServer', 'File'][k] ?? '' : k
+  typeof k === 'number' ? ['SapB1', 'SqlServer', 'File', 'Rest'][k] ?? '' : k
 
 const emptySpec: MappingSpec = { header: [], lines: [] }
 
@@ -115,7 +115,8 @@ export default function ScenarioEditor({ id, go, aiOn }: {
     if (next.freq !== 'custom') set({ cronExpression: buildCron(next.freq, next) })
   }
 
-  const b1Conns = conns.filter(c => kindName(c.kind) === 'SapB1')
+  // Any writable target: SAP B1 or a manifest-driven REST/OData connector.
+  const targetConns = conns.filter(c => ['SapB1', 'Rest'].includes(kindName(c.kind)))
   const sqlConns = conns.filter(c => kindName(c.kind) === 'SqlServer')
 
   const loadTables = async () => {
@@ -179,7 +180,7 @@ export default function ScenarioEditor({ id, go, aiOn }: {
       <div className="page-head">
         <div>
           <h1>{s.name || (id === 'new' ? 'New scenario' : 'Untitled scenario')}</h1>
-          <p>{s.sourceKind} → {s.targetEntity || 'choose a B1 object'}</p>
+          <p>{s.sourceKind} → {s.targetEntity || 'choose a target object'}</p>
         </div>
         <div className="actions" style={{ marginTop: 0 }}>
           <button className="ghost" onClick={() => go({ p: 'scenarios' })}>← Scenarios</button>
@@ -290,10 +291,14 @@ export default function ScenarioEditor({ id, go, aiOn }: {
       {tab === 'Target' && (
         <div className="panel">
           <div className="row">
-            <div className="field grow"><label>SAP B1 connection</label>
+            <div className="field grow"><label>Target connection</label>
               <select value={s.b1ConnectionId} onChange={e => set({ b1ConnectionId: e.target.value, targetEntity: '' })}>
                 <option value="">— choose —</option>
-                {b1Conns.map(c => <option key={c.id} value={c.id}>{c.name} ({c.companyDB})</option>)}
+                {targetConns.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}{c.companyDB ? ` (${c.companyDB})` : ` · ${kindName(c.kind)}`}
+                  </option>
+                ))}
               </select></div>
             <div className="field grow"><label>Target object ({entities.length} discovered)</label>
               <select value={s.targetEntity} onChange={e => set({ targetEntity: e.target.value })}>

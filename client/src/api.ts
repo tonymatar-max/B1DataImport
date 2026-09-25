@@ -1,5 +1,5 @@
 import type {
-  B1Entity, ConnectionDef, Dashboard, EntitySummary, FieldNote,
+  B1Entity, ConnectionDef, ConnectorsResponse, Dashboard, EntitySummary, FieldNote,
   MappingSpec, Run, RunItem, Scenario, SourceSchema,
 } from './types'
 
@@ -21,6 +21,7 @@ export const api = {
   dashboard: () => req<Dashboard>('/api/dashboard'),
 
   // Connections
+  connectors: () => req<ConnectorsResponse>('/api/connectors'),
   connections: () => req<ConnectionDef[]>('/api/connections'),
   createConnection: (c: unknown) => req<ConnectionDef>('/api/connections', json('POST', c)),
   updateConnection: (id: string, c: unknown) => req<ConnectionDef>(`/api/connections/${id}`, json('PUT', c)),
