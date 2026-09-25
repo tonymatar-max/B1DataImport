@@ -233,7 +233,7 @@ export default function Mapper({ schema, entity, spec, setSpec, notes }: {
 
 // ---- Visual (connect-the-lines) view: same MappingSpec, drag a source column onto a target field ----
 
-type Line = { key: string; x1: number; y1: number; x2: number; y2: number; sel: boolean; field: string }
+type Line = { key: string; x1: number; y1: number; x2: number; y2: number; field: string; col: string }
 
 function VisualView({ props, list, patch, cols, schema, noteFor, onlyMapped }: {
   props: B1Property[]
@@ -248,6 +248,8 @@ function VisualView({ props, list, patch, cols, schema, noteFor, onlyMapped }: {
   const [lines, setLines] = useState<Line[]>([])
   const [dims, setDims] = useState({ w: 0, h: 0 })
   const [dragOver, setDragOver] = useState<string | null>(null)
+  const [hoverCol, setHoverCol] = useState<string | null>(null)
+  const [hoverField, setHoverField] = useState<string | null>(null)
 
   const wrap = useRef<HTMLDivElement>(null)
   const srcRefs = useRef<Map<string, HTMLElement>>(new Map())
@@ -276,7 +278,7 @@ function VisualView({ props, list, patch, cols, schema, noteFor, onlyMapped }: {
           key: `${f.sourceColumn}->${p.name}`,
           x1: s.offsetLeft + s.offsetWidth, y1: s.offsetTop + s.offsetHeight / 2,
           x2: t.offsetLeft, y2: t.offsetTop + t.offsetHeight / 2,
-          sel: selected === p.name, field: p.name,
+          field: p.name, col: f.sourceColumn,
         })
       }
       setLines(next)
@@ -303,23 +305,37 @@ function VisualView({ props, list, patch, cols, schema, noteFor, onlyMapped }: {
 
   const selProp = props.find(p => p.name === selected) ?? null
 
+  const mappedCount = shownProps.filter(p => isMapped(getF(p.name))).length
+
   return (
     <div className="vmap-outer">
+      <div className="vmap-legend small muted">
+        Drag a source column onto a target field to map it. Click a field to edit its transform.
+        <span className="vmap-count">{mappedCount}/{shownProps.length} mapped</span>
+      </div>
       <div className="vmap" ref={wrap}>
         <svg className="vmap-svg" width={dims.w} height={dims.h}>
-          {lines.map(l => (
-            <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-              className={`vmap-line ${l.sel ? 'sel' : ''}`}
-              onClick={() => setSelected(l.field)} />
-          ))}
+          {lines.map(l => {
+            const hot = selected === l.field || hoverField === l.field || hoverCol === l.col
+            const dim = (hoverField || hoverCol || selected) && !hot
+            const cx = (l.x1 + l.x2) / 2
+            return (
+              <g key={l.key} className={`vmap-edge ${hot ? 'hot' : ''} ${dim ? 'dim' : ''}`}>
+                <path d={`M ${l.x1} ${l.y1} C ${cx} ${l.y1}, ${cx} ${l.y2}, ${l.x2} ${l.y2}`} />
+                <circle cx={l.x1} cy={l.y1} r={3} />
+                <circle cx={l.x2} cy={l.y2} r={3} />
+              </g>
+            )
+          })}
         </svg>
 
         <div className="vmap-col">
           <div className="hd">Source columns ({cols.length})</div>
           {schema.columns.map(c => (
-            <div key={c.name} className="vchip src" draggable
+            <div key={c.name} className={`vchip src ${hoverCol === c.name ? 'hot' : ''}`} draggable
               ref={el => { if (el) srcRefs.current.set(c.name, el); else srcRefs.current.delete(c.name) }}
               onDragStart={e => { e.dataTransfer.setData('text/col', c.name); e.dataTransfer.effectAllowed = 'link' }}
+              onMouseEnter={() => setHoverCol(c.name)} onMouseLeave={() => setHoverCol(null)}
               title={String(schema.previewRows[0]?.[c.name] ?? '')}>
               <span className="nm">{c.name}</span>
               <span className="s">{String(schema.previewRows[0]?.[c.name] ?? c.dataType).slice(0, 20)}</span>
@@ -339,6 +355,7 @@ function VisualView({ props, list, patch, cols, schema, noteFor, onlyMapped }: {
                 ref={el => { if (el) tgtRefs.current.set(p.name, el); else tgtRefs.current.delete(p.name) }}
                 className={`vchip tgt ${mapped ? 'mapped' : ''} ${selected === p.name ? 'sel' : ''} ${dragOver === p.name ? 'over' : ''} ${mandatory && !mapped ? 'need' : ''}`}
                 onClick={() => setSelected(p.name)}
+                onMouseEnter={() => setHoverField(p.name)} onMouseLeave={() => setHoverField(null)}
                 onDragOver={e => { e.preventDefault(); setDragOver(p.name) }}
                 onDragLeave={() => setDragOver(d => d === p.name ? null : d)}
                 onDrop={e => drop(p.name, e)}>

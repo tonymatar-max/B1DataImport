@@ -151,13 +151,17 @@ tr.click:hover { background: #f7f9fc; cursor: pointer; }
 .viewtoggle button.on { background: var(--brand); color: #fff; }
 
 .vmap-outer { position: relative; }
+.vmap-legend { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.vmap-count { margin-left: auto; font-weight: 700; color: var(--brand-dark);
+  background: var(--chip); border-radius: 20px; padding: 1px 9px; }
 .vmap { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 120px;
   border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: #fcfdfe; }
-.vmap-svg { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
-.vmap-line { stroke: var(--brand); stroke-width: 2; fill: none; opacity: .55;
-  pointer-events: stroke; cursor: pointer; }
-.vmap-line:hover { opacity: 1; stroke-width: 3; }
-.vmap-line.sel { stroke: var(--brand-dark); opacity: 1; stroke-width: 3; }
+.vmap-svg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.vmap-edge path { stroke: var(--brand); stroke-width: 2; fill: none; opacity: .5; transition: opacity .12s; }
+.vmap-edge circle { fill: var(--brand); opacity: .5; transition: opacity .12s; }
+.vmap-edge.hot path { stroke: var(--brand-dark); stroke-width: 2.5; opacity: 1; }
+.vmap-edge.hot circle { fill: var(--brand-dark); opacity: 1; }
+.vmap-edge.dim path, .vmap-edge.dim circle { opacity: .14; }
 
 .vmap-col { display: flex; flex-direction: column; gap: 7px; position: relative; z-index: 1; }
 .vmap-col .hd { font-weight: 600; font-size: 12px; color: var(--muted);
@@ -170,7 +174,7 @@ tr.click:hover { background: #f7f9fc; cursor: pointer; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vchip.src { cursor: grab; }
 .vchip.src:active { cursor: grabbing; }
-.vchip.src:hover { border-color: var(--brand); }
+.vchip.src:hover, .vchip.src.hot { border-color: var(--brand); background: #f4f9ff; }
 .vchip.tgt { cursor: pointer; }
 .vchip.tgt.mapped { border-color: var(--brand); background: #f4f9ff; }
 .vchip.tgt.sel { border-color: var(--brand-dark); box-shadow: 0 0 0 2px rgba(10,110,209,.15); }
