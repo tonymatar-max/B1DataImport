@@ -1,0 +1,19 @@
+# .NET
+server/bin/
+server/obj/
+server/wwwroot/
+server/data/uploads/
+server/data/
+
+# Node / Vite
+client/node_modules/
+client/dist/
+
+# IDE / OS
+.vs/
+*.user
+.DS_Store
+
+# Logs
+*_run.log
+*.log
