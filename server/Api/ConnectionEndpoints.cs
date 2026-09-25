@@ -2,7 +2,9 @@ using B1DataImporter.Api.Data;
 using B1DataImporter.Api.Domain;
 using B1DataImporter.Api.Services;
 using B1DataImporter.Api.Services.B1;
+using B1DataImporter.Api.Services.Connectors;
 using B1DataImporter.Api.Services.Connectors.B1;
+using B1DataImporter.Api.Services.Connectors.Rest;
 using B1DataImporter.Api.Services.Jobs;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +13,7 @@ namespace B1DataImporter.Api.Api;
 
 public record ConnectionInput(
     string Name, ConnectionKind Kind, string? BaseUrl, string? CompanyDB, string? UserName,
-    string? Password, bool IgnoreSslErrors);
+    string? Password, bool IgnoreSslErrors, string? ConnectorManifestId = null);
 
 public static class ConnectionEndpoints
 {
@@ -38,6 +40,7 @@ public static class ConnectionEndpoints
                 CompanyDB = input.CompanyDB,
                 UserName = input.UserName,
                 IgnoreSslErrors = input.IgnoreSslErrors,
+                ConnectorManifestId = input.ConnectorManifestId,
                 SecretProtected = secrets.Protect(input.Password),
             };
             if (input.Kind == ConnectionKind.SqlServer)
@@ -57,6 +60,7 @@ public static class ConnectionEndpoints
             c.CompanyDB = input.CompanyDB;
             c.UserName = input.UserName;
             c.IgnoreSslErrors = input.IgnoreSslErrors;
+            c.ConnectorManifestId = input.ConnectorManifestId;
             // Only overwrite a secret when a new one was actually supplied.
             var password = input.Password;
             if (!string.IsNullOrEmpty(password)) c.SecretProtected = secrets.Protect(password);
@@ -77,16 +81,19 @@ public static class ConnectionEndpoints
             return Results.Ok();
         });
 
-        g.MapPost("/{id}/test", async (string id, AppDbContext db, ISecretProtector secrets) =>
+        g.MapPost("/{id}/test", async (string id, AppDbContext db, ISecretProtector secrets,
+            TargetConnectorRegistry registry) =>
         {
             var c = await db.Connections.FindAsync(id);
             if (c is null) return Results.NotFound();
             try
             {
-                if (c.Kind == ConnectionKind.SapB1)
+                if (registry.Has(c.Kind))
                 {
-                    using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
-                    await client.LoginAsync();
+                    // Opening a session authenticates (B1 logs in); listing entities confirms
+                    // metadata is reachable — the real check for any target connector.
+                    using var session = await registry.Get(c.Kind).OpenAsync(c);
+                    await session.GetEntitiesAsync();
                 }
                 else
                 {
@@ -107,16 +114,16 @@ public static class ConnectionEndpoints
             }
         });
 
-        // Discover objects on a saved B1 connection.
-        g.MapGet("/{id}/entities", async (string id, AppDbContext db, ISecretProtector secrets, MetadataService meta) =>
+        // Discover objects on a saved target connection (B1 or any manifest-driven connector).
+        g.MapGet("/{id}/entities", async (string id, AppDbContext db, TargetConnectorRegistry registry) =>
         {
             var c = await db.Connections.FindAsync(id);
             if (c is null) return Results.NotFound();
+            if (!registry.Has(c.Kind)) return Results.BadRequest(new { message = $"{c.Kind} is not a writable target." });
             try
             {
-                using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
-                await client.LoginAsync();
-                var entities = meta.Parse(await client.GetMetadataAsync(), c.BaseUrl + "|" + c.CompanyDB);
+                using var session = await registry.Get(c.Kind).OpenAsync(c);
+                var entities = await session.GetEntitiesAsync();
                 return Results.Ok(entities.Select(e => new
                 {
                     e.Name, e.HasUdfs,
@@ -129,15 +136,15 @@ public static class ConnectionEndpoints
         });
 
         g.MapGet("/{id}/entities/{name}", async (string id, string name, AppDbContext db,
-            ISecretProtector secrets, MetadataService meta) =>
+            TargetConnectorRegistry registry) =>
         {
             var c = await db.Connections.FindAsync(id);
             if (c is null) return Results.NotFound();
+            if (!registry.Has(c.Kind)) return Results.BadRequest(new { message = $"{c.Kind} is not a writable target." });
             try
             {
-                using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
-                await client.LoginAsync();
-                var entities = meta.Parse(await client.GetMetadataAsync(), c.BaseUrl + "|" + c.CompanyDB);
+                using var session = await registry.Get(c.Kind).OpenAsync(c);
+                var entities = await session.GetEntitiesAsync();
                 var e = entities.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
                 return e is null ? Results.NotFound() : Results.Ok(e);
             }
@@ -152,11 +159,19 @@ public static class ConnectionEndpoints
             try { return Results.Ok(SqlSourceReader.ListTables(secrets.Unprotect(c.ConnectionStringProtected)!)); }
             catch (Exception ex) { return Results.BadRequest(new { message = ex.Message }); }
         });
+
+        // Discovery: which target connectors are available, and which REST manifests can be picked.
+        app.MapGet("/api/connectors", (TargetConnectorRegistry registry, ManifestStore manifests) => Results.Ok(new
+        {
+            connectors = registry.All.Select(c => new { kind = c.Kind.ToString(), c.DisplayName }),
+            manifests = manifests.All.Select(m => new { m.Id, m.DisplayName }),
+        }));
     }
 
     private static object Shape(ConnectionDef c) => new
     {
         c.Id, c.Name, c.Kind, c.BaseUrl, c.CompanyDB, c.UserName, c.IgnoreSslErrors,
+        c.ConnectorManifestId,
         hasSecret = !string.IsNullOrEmpty(c.SecretProtected) || !string.IsNullOrEmpty(c.ConnectionStringProtected),
         c.LastTestedUtc, c.LastTestResult,
     };

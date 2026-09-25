@@ -14,6 +14,9 @@ public class TargetConnectorRegistry
     public TargetConnectorRegistry(IEnumerable<ITargetConnector> connectors)
         => _byKind = connectors.ToDictionary(c => c.Kind);
 
+    /// <summary>Is there a target connector for this kind? (SQL/File are sources, not targets.)</summary>
+    public bool Has(ConnectionKind kind) => _byKind.ContainsKey(kind);
+
     public ITargetConnector Get(ConnectionKind kind)
         => _byKind.TryGetValue(kind, out var c)
             ? c
