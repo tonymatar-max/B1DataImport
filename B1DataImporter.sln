@@ -1,0 +1,33 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B1DataImporter.Api", "server\B1DataImporter.Api.csproj", "{71E4BDB3-A275-44EE-B940-342861BE471D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{011740AA-02AA-4654-B8C3-053B9E0AC959}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B1DataImporter.Tests", "tests\B1DataImporter.Tests\B1DataImporter.Tests.csproj", "{1C7F2277-B338-4652-A9D0-B711D0382895}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{71E4BDB3-A275-44EE-B940-342861BE471D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{71E4BDB3-A275-44EE-B940-342861BE471D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{71E4BDB3-A275-44EE-B940-342861BE471D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{71E4BDB3-A275-44EE-B940-342861BE471D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1C7F2277-B338-4652-A9D0-B711D0382895}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1C7F2277-B338-4652-A9D0-B711D0382895}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1C7F2277-B338-4652-A9D0-B711D0382895}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1C7F2277-B338-4652-A9D0-B711D0382895}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{1C7F2277-B338-4652-A9D0-B711D0382895} = {011740AA-02AA-4654-B8C3-053B9E0AC959}
+	EndGlobalSection
+EndGlobal

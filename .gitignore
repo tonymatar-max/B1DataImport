@@ -17,3 +17,7 @@ client/dist/
 # Logs
 *_run.log
 *.log
+
+# Build output (any project)
+**/bin/
+**/obj/

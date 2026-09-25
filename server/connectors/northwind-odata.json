@@ -1,0 +1,27 @@
+{
+  "id": "northwind-odata",
+  "displayName": "Northwind (OData demo service)",
+  "auth": { "type": "none" },
+  "entities": [
+    {
+      "name": "Products",
+      "keyField": "ID",
+      "fields": [
+        { "name": "ID", "type": "int", "isKey": true, "nullable": false },
+        { "name": "Name", "type": "string", "nullable": false, "maxLength": 100 },
+        { "name": "Description", "type": "string", "nullable": true },
+        { "name": "ReleaseDate", "type": "datetime", "nullable": true },
+        { "name": "Rating", "type": "int", "nullable": true },
+        { "name": "Price", "type": "decimal", "nullable": true }
+      ]
+    },
+    {
+      "name": "Categories",
+      "keyField": "ID",
+      "fields": [
+        { "name": "ID", "type": "int", "isKey": true, "nullable": false },
+        { "name": "Name", "type": "string", "nullable": false, "maxLength": 100 }
+      ]
+    }
+  ]
+}

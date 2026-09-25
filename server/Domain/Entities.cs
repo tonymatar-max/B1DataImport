@@ -4,7 +4,7 @@ namespace B1DataImporter.Api.Domain;
 
 // ============================================================ Connections
 
-public enum ConnectionKind { SapB1, SqlServer, File }
+public enum ConnectionKind { SapB1, SqlServer, File, Rest }
 
 /// <summary>A reusable, named connection to either SAP B1 or a source system.</summary>
 public class ConnectionDef
@@ -24,6 +24,10 @@ public class ConnectionDef
     // SQL / file
     public string? ConnectionStringProtected { get; set; }
     public string? RootPath { get; set; }
+
+    // REST (manifest-driven connector): which connector manifest describes this system's
+    // entities and URL conventions. BaseUrl/UserName/SecretProtected are reused for endpoint + auth.
+    public string? ConnectorManifestId { get; set; }
 
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public DateTime? LastTestedUtc { get; set; }

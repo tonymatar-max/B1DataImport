@@ -7,6 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Connector manifests are read from the app's content root at runtime. -->
+    <Content Update="connectors\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Anthropic" Version="12.46.0" />
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="Cronos" Version="0.8.4" />

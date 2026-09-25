@@ -28,8 +28,11 @@ builder.Services.AddSingleton<AiMappingService>();
 
 // Target connectors: one ITargetConnector per system, resolved by ConnectionKind. Register a
 // new connector here (e.g. a manifest-driven REST connector) and the executor picks it up.
+builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.Rest.ManifestStore>();
 builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.ITargetConnector,
     B1DataImporter.Api.Services.Connectors.B1.B1TargetConnector>();
+builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.ITargetConnector,
+    B1DataImporter.Api.Services.Connectors.Rest.RestManifestConnector>();
 builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.TargetConnectorRegistry>();
 
 builder.Services.AddSingleton<RunQueue>();
@@ -53,6 +56,10 @@ using (var scope = app.Services.CreateScope())
             "select count(*) as [Value] from pragma_table_info('Runs') where name = 'RetryRowNumbers'")
             .AsEnumerable().Single().Equals(1))
         dbc.Database.ExecuteSqlRaw("alter table Runs add column RetryRowNumbers TEXT NULL");
+    if (!dbc.Database.SqlQueryRaw<int>(
+            "select count(*) as [Value] from pragma_table_info('Connections') where name = 'ConnectorManifestId'")
+            .AsEnumerable().Single().Equals(1))
+        dbc.Database.ExecuteSqlRaw("alter table Connections add column ConnectorManifestId TEXT NULL");
 }
 
 app.UseCors();
