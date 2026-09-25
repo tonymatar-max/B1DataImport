@@ -20,6 +20,18 @@ A **Scenario** is one integration: source + mapping + target + trigger. Running 
 **Run**, which a background worker executes; every record becomes a **RunItem** so you can see
 exactly which rows failed and re-run only those.
 
+> **Becoming a codeless integration platform.** SAP B1 is now the *first* target behind a generic
+> `ITargetConnector` seam, not the only one. A second, **manifest-driven REST/OData connector** lets
+> you add a new target system with a JSON manifest and no code. See
+> [ARCHITECTURE.md](ARCHITECTURE.md) for the design and roadmap.
+
+## Build & test
+
+```bash
+dotnet build B1DataImporter.sln
+dotnet test  B1DataImporter.sln   # xUnit; covers the target-agnostic core
+```
+
 ## What it does
 
 | Capability | How |
