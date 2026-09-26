@@ -106,11 +106,12 @@ public class AiMappingService
         };
         // One model → "model"; several → OpenRouter's "models" fallback array (primary first, then
         // the rest if it's down, rate-limited, or refuses).
+        // NOTE: we deliberately do NOT send response_format=json_object — many models (esp. free
+        // ones) don't support JSON mode and 400 on it, which would defeat the fallback list. The
+        // prompt already demands a bare JSON object, and the parser strips code fences.
         object body = r.Models.Count > 1
-            ? new { models = r.Models, temperature = 0, max_tokens = 16000,
-                    response_format = new { type = "json_object" }, messages }
-            : new { model = r.Models[0], temperature = 0, max_tokens = 16000,
-                    response_format = new { type = "json_object" }, messages };
+            ? new { models = r.Models, temperature = 0, max_tokens = 16000, messages }
+            : new { model = r.Models[0], temperature = 0, max_tokens = 16000, messages };
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/chat/completions")
         {
