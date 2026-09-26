@@ -17,7 +17,7 @@ const json = (method: string, body: unknown): RequestInit => ({
 })
 
 export const api = {
-  health: () => req<{ ok: boolean; aiConfigured: boolean }>('/api/health'),
+  health: () => req<{ ok: boolean; aiConfigured: boolean; aiProvider?: string }>('/api/health'),
   dashboard: () => req<Dashboard>('/api/dashboard'),
 
   // Connections

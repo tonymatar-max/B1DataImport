@@ -43,7 +43,7 @@ export default function App() {
             </a>
           ))}
         </nav>
-        <div className="foot">{aiOn ? 'AI mapping ready' : 'AI mapping off — set ANTHROPIC_API_KEY'}</div>
+        <div className="foot">{aiOn ? 'AI mapping ready' : 'AI mapping off — set OPENROUTER_API_KEY'}</div>
       </aside>
 
       <main className="main">

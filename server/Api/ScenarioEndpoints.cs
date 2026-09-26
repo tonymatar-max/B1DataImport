@@ -79,17 +79,17 @@ public static class ScenarioEndpoints
 
         // Ask Claude to propose the mapping.
         g.MapPost("/ai-propose", async (AiProposeRequest req, AppDbContext db,
-            ISecretProtector secrets, MetadataService meta, AiMappingService ai) =>
+            TargetConnectorRegistry registry, AiMappingService ai) =>
         {
             if (!ai.IsConfigured)
-                return Results.BadRequest(new { message = "No Anthropic API key configured (ANTHROPIC_API_KEY)." });
+                return Results.BadRequest(new { message = "No AI API key configured. Set OPENROUTER_API_KEY (recommended) or ANTHROPIC_API_KEY." });
             var c = await db.Connections.FindAsync(req.ConnectionId);
             if (c is null) return Results.NotFound();
+            if (!registry.Has(c.Kind)) return Results.BadRequest(new { message = $"{c.Kind} is not a writable target." });
             try
             {
-                using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
-                await client.LoginAsync();
-                var entities = meta.Parse(await client.GetMetadataAsync(), c.BaseUrl + "|" + c.CompanyDB);
+                using var session = await registry.Get(c.Kind).OpenAsync(c);
+                var entities = await session.GetEntitiesAsync();
                 var entity = entities.FirstOrDefault(e =>
                     e.Name.Equals(req.TargetEntity, StringComparison.OrdinalIgnoreCase));
                 if (entity is null) return Results.NotFound();

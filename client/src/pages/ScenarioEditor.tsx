@@ -391,7 +391,7 @@ export default function ScenarioEditor({ id, go, aiOn }: {
                 </div>
                 <div className="actions" style={{ marginTop: 0 }}>
                   <button className="primary" disabled={!aiOn || busy === 'ai'} onClick={propose}
-                    title={aiOn ? 'Let Claude propose the mapping' : 'Set ANTHROPIC_API_KEY to enable'}>
+                    title={aiOn ? 'Let AI propose the mapping' : 'Set OPENROUTER_API_KEY to enable'}>
                     {busy === 'ai' ? 'Thinking…' : '✦ Propose mapping with AI'}
                   </button>
                 </div>

@@ -98,7 +98,7 @@ app.MapPost("/api/upload", async (HttpRequest request, SourceReaderFactory reade
 });
 
 app.MapGet("/api/health", (AiMappingService ai) =>
-    Results.Ok(new { ok = true, aiConfigured = ai.IsConfigured }));
+    Results.Ok(new { ok = true, aiConfigured = ai.IsConfigured, aiProvider = ai.ProviderInfo }));
 
 app.MapFallbackToFile("index.html");
 
