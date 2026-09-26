@@ -18,6 +18,15 @@ const json = (method: string, body: unknown): RequestInit => ({
 
 export const api = {
   health: () => req<{ ok: boolean; aiConfigured: boolean; aiProvider?: string }>('/api/health'),
+
+  // Settings (AI provider + keys; keys are never returned)
+  getSettings: () => req<{
+    provider: string; model: string; hasOpenRouterKey: boolean; hasAnthropicKey: boolean
+    aiConfigured: boolean; activeProvider: string
+  }>('/api/settings'),
+  saveSettings: (body: {
+    provider?: string; model?: string; openRouterApiKey?: string; anthropicApiKey?: string
+  }) => req<{ ok: boolean }>('/api/settings', json('PUT', body)),
   dashboard: () => req<Dashboard>('/api/dashboard'),
 
   // Connections

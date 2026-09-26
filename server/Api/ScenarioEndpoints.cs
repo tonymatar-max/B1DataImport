@@ -81,8 +81,8 @@ public static class ScenarioEndpoints
         g.MapPost("/ai-propose", async (AiProposeRequest req, AppDbContext db,
             TargetConnectorRegistry registry, AiMappingService ai) =>
         {
-            if (!ai.IsConfigured)
-                return Results.BadRequest(new { message = "No AI API key configured. Set OPENROUTER_API_KEY (recommended) or ANTHROPIC_API_KEY." });
+            if (!(await ai.GetStatusAsync()).configured)
+                return Results.BadRequest(new { message = "No AI API key configured. Set it in Settings, or via OPENROUTER_API_KEY / ANTHROPIC_API_KEY." });
             var c = await db.Connections.FindAsync(req.ConnectionId);
             if (c is null) return Results.NotFound();
             if (!registry.Has(c.Kind)) return Results.BadRequest(new { message = $"{c.Kind} is not a writable target." });

@@ -25,6 +25,7 @@ builder.Services.AddSingleton<ISecretProtector, SecretProtector>();
 builder.Services.AddSingleton<MetadataService>();
 builder.Services.AddSingleton<SourceReaderFactory>();
 builder.Services.AddSingleton<AiMappingService>();
+builder.Services.AddScoped<SettingsStore>();
 
 // Target connectors: one ITargetConnector per system, resolved by ConnectionKind. Register a
 // new connector here (e.g. a manifest-driven REST connector) and the executor picks it up.
@@ -65,6 +66,9 @@ using (var scope = app.Services.CreateScope())
             "select count(*) as [Value] from pragma_table_info('Connections') where name = 'ConnectorManifestId'")
             .AsEnumerable().Single().Equals(1))
         dbc.Database.ExecuteSqlRaw("alter table Connections add column ConnectorManifestId TEXT NULL");
+    // Settings table (added after the initial schema) — create it on already-existing dev DBs.
+    dbc.Database.ExecuteSqlRaw(
+        "create table if not exists \"Settings\" (\"Key\" TEXT NOT NULL CONSTRAINT \"PK_Settings\" PRIMARY KEY, \"Value\" TEXT NULL)");
 }
 
 app.UseCors();
@@ -74,6 +78,7 @@ app.UseStaticFiles();
 app.MapConnections();
 app.MapScenarios();
 app.MapRuns();
+app.MapSettings();
 
 // Upload a spreadsheet to use as a scenario source; returns the stored path + schema.
 app.MapPost("/api/upload", async (HttpRequest request, SourceReaderFactory readers) =>
@@ -97,8 +102,11 @@ app.MapPost("/api/upload", async (HttpRequest request, SourceReaderFactory reade
     return Results.Ok(new { path, kind, fileName = file.FileName, schema, sheets });
 });
 
-app.MapGet("/api/health", (AiMappingService ai) =>
-    Results.Ok(new { ok = true, aiConfigured = ai.IsConfigured, aiProvider = ai.ProviderInfo }));
+app.MapGet("/api/health", async (AiMappingService ai) =>
+{
+    var (configured, provider) = await ai.GetStatusAsync();
+    return Results.Ok(new { ok = true, aiConfigured = configured, aiProvider = provider });
+});
 
 app.MapFallbackToFile("index.html");
 

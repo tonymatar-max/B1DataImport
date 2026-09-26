@@ -18,57 +18,75 @@ public record FieldNote(string TargetField, string Confidence, string Reason);
 public class AiMappingService
 {
     private readonly ILogger<AiMappingService> _log;
+    private readonly IConfiguration _config;
+    private readonly IServiceScopeFactory _scopes;
     private readonly HttpClient _http;
 
-    private readonly string? _openRouterKey;
-    private readonly string _openRouterModel;
-    private readonly string? _anthropicKey;
-    private readonly string _provider;   // "openrouter" | "anthropic"
-
-    public AiMappingService(IConfiguration config, ILogger<AiMappingService> log)
+    public AiMappingService(IConfiguration config, IServiceScopeFactory scopes, ILogger<AiMappingService> log)
     {
         _log = log;
+        _config = config;
+        _scopes = scopes;
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
-
-        _openRouterKey = config["OpenRouter:ApiKey"]
-                         ?? Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
-        _openRouterModel = config["OpenRouter:Model"]
-                           ?? Environment.GetEnvironmentVariable("OPENROUTER_MODEL")
-                           ?? "anthropic/claude-3.5-sonnet";
-        _anthropicKey = config["Anthropic:ApiKey"]
-                        ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-
-        // Explicit override, else prefer OpenRouter when its key is present.
-        _provider = (config["Ai:Provider"] ?? Environment.GetEnvironmentVariable("AI_PROVIDER"))?.ToLowerInvariant()
-                    ?? (!string.IsNullOrWhiteSpace(_openRouterKey) ? "openrouter" : "anthropic");
     }
 
-    public bool IsConfigured => _provider == "openrouter"
-        ? !string.IsNullOrWhiteSpace(_openRouterKey)
-        : !string.IsNullOrWhiteSpace(_anthropicKey);
+    /// <summary>Effective AI config, resolved fresh each call: DB settings win, then appsettings, then env.</summary>
+    private sealed record Resolved(string Provider, string? OpenRouterKey, string Model, string? AnthropicKey)
+    {
+        public bool Configured => Provider == "openrouter"
+            ? !string.IsNullOrWhiteSpace(OpenRouterKey)
+            : !string.IsNullOrWhiteSpace(AnthropicKey);
+        public string Info => Provider == "openrouter" ? $"openrouter:{Model}" : "anthropic:claude-opus-5";
+    }
 
-    /// <summary>The active provider + model, for surfacing in the UI/health.</summary>
-    public string ProviderInfo => _provider == "openrouter" ? $"openrouter:{_openRouterModel}" : "anthropic:claude-opus-5";
+    private async Task<Resolved> ResolveAsync(CancellationToken ct)
+    {
+        using var scope = _scopes.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<SettingsStore>();
+
+        var orKey = await store.GetSecretAsync(SettingsStore.OpenRouterApiKey, ct)
+                    ?? _config["OpenRouter:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+        var anthKey = await store.GetSecretAsync(SettingsStore.AnthropicApiKey, ct)
+                      ?? _config["Anthropic:ApiKey"] ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        var model = await store.GetAsync(SettingsStore.OpenRouterModel, ct)
+                    ?? _config["OpenRouter:Model"] ?? Environment.GetEnvironmentVariable("OPENROUTER_MODEL")
+                    ?? "anthropic/claude-3.5-sonnet";
+        var provider = (await store.GetAsync(SettingsStore.AiProvider, ct)
+                        ?? _config["Ai:Provider"] ?? Environment.GetEnvironmentVariable("AI_PROVIDER"))
+                       ?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(provider) || provider == "auto")
+            provider = !string.IsNullOrWhiteSpace(orKey) ? "openrouter" : "anthropic";
+
+        return new Resolved(provider, orKey, model, anthKey);
+    }
+
+    /// <summary>Whether AI mapping can run, and the active provider:model — for /api/health and the UI.</summary>
+    public async Task<(bool configured, string provider)> GetStatusAsync(CancellationToken ct = default)
+    {
+        var r = await ResolveAsync(ct);
+        return (r.Configured, r.Info);
+    }
 
     public async Task<AiMappingProposal> ProposeAsync(
         SourceSchema source, TargetEntity entity, CancellationToken ct = default)
     {
-        if (!IsConfigured)
+        var r = await ResolveAsync(ct);
+        if (!r.Configured)
             throw new InvalidOperationException(
-                "No AI API key configured. Set OPENROUTER_API_KEY (recommended) or ANTHROPIC_API_KEY.");
+                "No AI API key configured. Set it in Settings, or via OPENROUTER_API_KEY / ANTHROPIC_API_KEY.");
 
-        var json = _provider == "openrouter"
-            ? await CallOpenRouterAsync(BuildUserPrompt(source, entity), ct)
-            : await CallAnthropicAsync(BuildUserPrompt(source, entity), ct);
+        var json = r.Provider == "openrouter"
+            ? await CallOpenRouterAsync(r, BuildUserPrompt(source, entity), ct)
+            : await CallAnthropicAsync(r, BuildUserPrompt(source, entity), ct);
         return Parse(json);
     }
 
     /// <summary>OpenRouter (OpenAI-compatible chat completions), JSON-object response.</summary>
-    private async Task<string> CallOpenRouterAsync(string userPrompt, CancellationToken ct)
+    private async Task<string> CallOpenRouterAsync(Resolved r, string userPrompt, CancellationToken ct)
     {
         var body = new
         {
-            model = _openRouterModel,
+            model = r.Model,
             temperature = 0,
             max_tokens = 16000,
             response_format = new { type = "json_object" },
@@ -83,7 +101,7 @@ public class AiMappingService
         {
             Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
         };
-        req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_openRouterKey}");
+        req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {r.OpenRouterKey}");
         // Optional attribution headers OpenRouter recommends.
         req.Headers.TryAddWithoutValidation("HTTP-Referer", "https://github.com/tonymatar-max/B1DataImport");
         req.Headers.TryAddWithoutValidation("X-Title", "B1 Data Importer");
@@ -100,9 +118,9 @@ public class AiMappingService
     }
 
     /// <summary>Anthropic (native SDK, structured JSON output).</summary>
-    private async Task<string> CallAnthropicAsync(string userPrompt, CancellationToken ct)
+    private async Task<string> CallAnthropicAsync(Resolved r, string userPrompt, CancellationToken ct)
     {
-        var client = new AnthropicClient { ApiKey = _anthropicKey };
+        var client = new AnthropicClient { ApiKey = r.AnthropicKey };
         var response = await client.Messages.Create(new MessageCreateParams
         {
             Model = "claude-opus-5",
