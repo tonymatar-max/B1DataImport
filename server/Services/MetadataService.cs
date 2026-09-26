@@ -21,9 +21,9 @@ public class MetadataService
     };
 
     /// <summary>Cache of parsed metadata per BaseUrl+CompanyDB, so we parse the big EDMX once.</summary>
-    private readonly Dictionary<string, List<B1Entity>> _cache = new();
+    private readonly Dictionary<string, List<TargetEntity>> _cache = new();
 
-    public List<B1Entity> Parse(string edmxXml, string cacheKey)
+    public List<TargetEntity> Parse(string edmxXml, string cacheKey)
     {
         if (_cache.TryGetValue(cacheKey, out var cached)) return cached;
 
@@ -51,7 +51,7 @@ public class MetadataService
         }
 
         // 3. EntitySets in the container define the URL-addressable objects.
-        var entities = new List<B1Entity>();
+        var entities = new List<TargetEntity>();
         foreach (var set in doc.Descendants(edm + "EntitySet"))
         {
             var setName = set.Attribute("Name")?.Value;
@@ -60,7 +60,7 @@ public class MetadataService
             var typeName = typeRef.Split('.').Last();
             if (!typesByName.TryGetValue(typeName, out var typeEl)) continue;
 
-            var entity = new B1Entity { Name = setName, EntityType = typeName };
+            var entity = new TargetEntity { Name = setName, EntityType = typeName };
             var keys = typeEl.Element(edm + "Key")?.Elements(edm + "PropertyRef")
                 .Select(k => k.Attribute("Name")?.Value).Where(x => x != null).Select(x => x!)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase)
@@ -87,7 +87,7 @@ public class MetadataService
 
                 if (childTypeName != null && typesByName.TryGetValue(childTypeName, out var childEl))
                 {
-                    entity.Collections.Add(new B1NavCollection
+                    entity.Collections.Add(new TargetCollection
                     {
                         Name = navName,
                         TargetEntity = childTypeName,
@@ -106,11 +106,11 @@ public class MetadataService
 
     public void Invalidate(string cacheKey) => _cache.Remove(cacheKey);
 
-    private static List<B1Property> ReadProperties(
+    private static List<TargetProperty> ReadProperties(
         XElement typeEl, XNamespace edm, HashSet<string> keys,
         Dictionary<string, List<string>> enumMembers)
     {
-        var props = new List<B1Property>();
+        var props = new List<TargetProperty>();
         foreach (var p in typeEl.Elements(edm + "Property"))
         {
             var name = p.Attribute("Name")?.Value;
@@ -118,7 +118,7 @@ public class MetadataService
             var type = p.Attribute("Type")?.Value ?? "Edm.String";
             if (type.StartsWith("Collection(", StringComparison.OrdinalIgnoreCase)) continue;   // handled as a child collection
             var shortType = type.Split('.').Last();
-            var prop = new B1Property
+            var prop = new TargetProperty
             {
                 Name = name,
                 Type = type,

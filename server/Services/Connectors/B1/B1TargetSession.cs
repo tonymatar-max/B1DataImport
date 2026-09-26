@@ -29,14 +29,14 @@ public class B1TargetSession : ITargetSession
 
     public ITargetLookup Lookups => _lookups;
 
-    public async Task<IReadOnlyList<B1Entity>> GetEntitiesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<TargetEntity>> GetEntitiesAsync(CancellationToken ct = default)
         => _metadata.Parse(await _client.GetMetadataAsync(ct), _conn.BaseUrl + "|" + _conn.CompanyDB);
 
     public Task<bool> ExistsAsync(string entitySet, string keyPredicate, CancellationToken ct = default)
         => _client.ExistsAsync(entitySet, keyPredicate, ct);
 
     public IReadOnlyList<string> Validate(
-        Dictionary<string, object?> payload, B1Entity entity, HashSet<string> explicitlyRequired)
+        Dictionary<string, object?> payload, TargetEntity entity, HashSet<string> explicitlyRequired)
         => _validator.Validate(payload, entity, explicitlyRequired);
 
     public async Task<IReadOnlyList<WriteResult>> WriteAsync(
@@ -61,7 +61,7 @@ public class B1TargetSession : ITargetSession
     }
 
     /// <summary>OData key predicate: quoted for strings, raw for numeric key types.</summary>
-    public string FormatKeyPredicate(object value, B1Property? prop)
+    public string FormatKeyPredicate(object value, TargetProperty? prop)
     {
         var s = value is System.Text.Json.JsonElement je ? je.ToString() : value.ToString() ?? "";
         var isNumeric = prop?.Type is "Edm.Int16" or "Edm.Int32" or "Edm.Int64"

@@ -267,7 +267,7 @@ public class ScenarioExecutor
 
     /// <summary>Post a batch of built records and record each result.</summary>
     private static async Task FlushAsync(
-        ITargetSession target, Scenario scenario, B1Entity entity, string keyProp,
+        ITargetSession target, Scenario scenario, TargetEntity entity, string keyProp,
         List<(RunItem item, string json, string method, string? keyPredicate)> pending,
         Run run, AppDbContext db, CancellationToken ct)
     {

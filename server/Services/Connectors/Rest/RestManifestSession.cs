@@ -26,14 +26,14 @@ public class RestManifestSession : ITargetSession
 
     public ITargetLookup Lookups => _lookups;
 
-    public Task<IReadOnlyList<B1Entity>> GetEntitiesAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<B1Entity>>(_manifest.ToEntities());
+    public Task<IReadOnlyList<TargetEntity>> GetEntitiesAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<TargetEntity>>(_manifest.ToEntities());
 
     public Task<bool> ExistsAsync(string entitySet, string keyPredicate, CancellationToken ct = default)
         => _client.ExistsAsync(entitySet, keyPredicate, ct);
 
     public IReadOnlyList<string> Validate(
-        Dictionary<string, object?> payload, B1Entity entity, HashSet<string> explicitlyRequired)
+        Dictionary<string, object?> payload, TargetEntity entity, HashSet<string> explicitlyRequired)
         => _validator.Validate(payload, entity, explicitlyRequired);
 
     public async Task<IReadOnlyList<WriteResult>> WriteAsync(
@@ -48,7 +48,7 @@ public class RestManifestSession : ITargetSession
         return results;
     }
 
-    public string FormatKeyPredicate(object value, B1Property? prop)
+    public string FormatKeyPredicate(object value, TargetProperty? prop)
     {
         var s = value is System.Text.Json.JsonElement je ? je.ToString() : value.ToString() ?? "";
         var isNumeric = prop?.Type is "Edm.Int16" or "Edm.Int32" or "Edm.Int64"

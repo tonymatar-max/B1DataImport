@@ -30,7 +30,7 @@ public class AiMappingService
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
 
     public async Task<AiMappingProposal> ProposeAsync(
-        SourceSchema source, B1Entity entity, CancellationToken ct = default)
+        SourceSchema source, TargetEntity entity, CancellationToken ct = default)
     {
         if (!IsConfigured)
             throw new InvalidOperationException(
@@ -88,7 +88,7 @@ public class AiMappingService
         Prefer leaving a field unmapped over guessing badly.
         """;
 
-    private static string BuildUserPrompt(SourceSchema source, B1Entity entity)
+    private static string BuildUserPrompt(SourceSchema source, TargetEntity entity)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# Source: {source.ObjectName} ({source.SourceType})");
