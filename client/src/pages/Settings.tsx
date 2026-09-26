@@ -62,9 +62,16 @@ export default function Settings({ onSaved }: { onSaved?: () => void }) {
               <option value="openrouter">OpenRouter</option>
               <option value="anthropic">Anthropic</option>
             </select></div>
-          <div className="field grow"><label>OpenRouter model</label>
-            <input value={model} onChange={e => setModel(e.target.value)}
-              placeholder="anthropic/claude-3.5-sonnet (default)" /></div>
+        </div>
+
+        <div className="field"><label>Model(s) (OpenRouter)</label>
+          <textarea rows={3} value={model} onChange={e => setModel(e.target.value)}
+            placeholder={'anthropic/claude-3.5-sonnet\nopenai/gpt-4o-mini\nmeta-llama/llama-3.3-70b-instruct'} />
+          <div className="muted small" style={{ marginTop: 4 }}>
+            One model per line (or comma-separated), <b>up to 3</b>. The first is primary; if it's
+            down, rate-limited, or refuses, OpenRouter falls back to the next. Any beyond 3 are ignored.
+            Leave blank for the default (<span className="mono">anthropic/claude-3.5-sonnet</span>).
+          </div>
         </div>
 
         <div className="field"><label>

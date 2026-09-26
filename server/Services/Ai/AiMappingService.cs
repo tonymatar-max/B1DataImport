@@ -30,13 +30,28 @@ public class AiMappingService
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
     }
 
+    private const string DefaultModel = "anthropic/claude-3.5-sonnet";
+
     /// <summary>Effective AI config, resolved fresh each call: DB settings win, then appsettings, then env.</summary>
-    private sealed record Resolved(string Provider, string? OpenRouterKey, string Model, string? AnthropicKey)
+    private sealed record Resolved(string Provider, string? OpenRouterKey, IReadOnlyList<string> Models, string? AnthropicKey)
     {
         public bool Configured => Provider == "openrouter"
             ? !string.IsNullOrWhiteSpace(OpenRouterKey)
             : !string.IsNullOrWhiteSpace(AnthropicKey);
-        public string Info => Provider == "openrouter" ? $"openrouter:{Model}" : "anthropic:claude-opus-5";
+        public string Info => Provider == "openrouter"
+            ? $"openrouter:{Models[0]}" + (Models.Count > 1 ? $" (+{Models.Count - 1} fallback)" : "")
+            : "anthropic:claude-opus-5";
+    }
+
+    /// <summary>Parse a models setting (newline- or comma-separated) into up to 3 model ids.</summary>
+    private static List<string> ParseModels(string? raw)
+    {
+        var models = (raw ?? "")
+            .Split(new[] { '\n', '\r', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct()
+            .Take(3)   // OpenRouter fallback list limit
+            .ToList();
+        return models.Count > 0 ? models : new List<string> { DefaultModel };
     }
 
     private async Task<Resolved> ResolveAsync(CancellationToken ct)
@@ -48,16 +63,16 @@ public class AiMappingService
                     ?? _config["OpenRouter:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
         var anthKey = await store.GetSecretAsync(SettingsStore.AnthropicApiKey, ct)
                       ?? _config["Anthropic:ApiKey"] ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-        var model = await store.GetAsync(SettingsStore.OpenRouterModel, ct)
-                    ?? _config["OpenRouter:Model"] ?? Environment.GetEnvironmentVariable("OPENROUTER_MODEL")
-                    ?? "anthropic/claude-3.5-sonnet";
+        var models = ParseModels(
+            await store.GetAsync(SettingsStore.OpenRouterModel, ct)
+            ?? _config["OpenRouter:Model"] ?? Environment.GetEnvironmentVariable("OPENROUTER_MODEL"));
         var provider = (await store.GetAsync(SettingsStore.AiProvider, ct)
                         ?? _config["Ai:Provider"] ?? Environment.GetEnvironmentVariable("AI_PROVIDER"))
                        ?.ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(provider) || provider == "auto")
             provider = !string.IsNullOrWhiteSpace(orKey) ? "openrouter" : "anthropic";
 
-        return new Resolved(provider, orKey, model, anthKey);
+        return new Resolved(provider, orKey, models, anthKey);
     }
 
     /// <summary>Whether AI mapping can run, and the active provider:model — for /api/health and the UI.</summary>
@@ -84,18 +99,18 @@ public class AiMappingService
     /// <summary>OpenRouter (OpenAI-compatible chat completions), JSON-object response.</summary>
     private async Task<string> CallOpenRouterAsync(Resolved r, string userPrompt, CancellationToken ct)
     {
-        var body = new
+        var messages = new object[]
         {
-            model = r.Model,
-            temperature = 0,
-            max_tokens = 16000,
-            response_format = new { type = "json_object" },
-            messages = new object[]
-            {
-                new { role = "system", content = SystemPrompt },
-                new { role = "user", content = userPrompt + "\n\n" + JsonShapeHint },
-            },
+            new { role = "system", content = SystemPrompt },
+            new { role = "user", content = userPrompt + "\n\n" + JsonShapeHint },
         };
+        // One model → "model"; several → OpenRouter's "models" fallback array (primary first, then
+        // the rest if it's down, rate-limited, or refuses).
+        object body = r.Models.Count > 1
+            ? new { models = r.Models, temperature = 0, max_tokens = 16000,
+                    response_format = new { type = "json_object" }, messages }
+            : new { model = r.Models[0], temperature = 0, max_tokens = 16000,
+                    response_format = new { type = "json_object" }, messages };
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/chat/completions")
         {
