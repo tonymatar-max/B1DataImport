@@ -35,6 +35,11 @@ builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.ITargetConn
     B1DataImporter.Api.Services.Connectors.Rest.RestManifestConnector>();
 builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.TargetConnectorRegistry>();
 
+// Source connectors: pull FROM a system. File/SQL keep the ISourceReader path; REST/OData reads here.
+builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.ISourceConnector,
+    B1DataImporter.Api.Services.Connectors.Rest.RestSourceConnector>();
+builder.Services.AddSingleton<B1DataImporter.Api.Services.Connectors.SourceConnectorRegistry>();
+
 builder.Services.AddSingleton<RunQueue>();
 builder.Services.AddSingleton<ScenarioExecutor>();
 builder.Services.AddHostedService<RunWorker>();

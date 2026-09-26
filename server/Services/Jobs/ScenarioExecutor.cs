@@ -21,6 +21,7 @@ public class ScenarioExecutor
 {
     private readonly IServiceScopeFactory _scopes;
     private readonly SourceReaderFactory _readers;
+    private readonly SourceConnectorRegistry _sourceConnectors;
     private readonly TargetConnectorRegistry _connectors;
     private readonly ISecretProtector _secrets;
     private readonly RecordBuilder _builder = new();
@@ -41,9 +42,11 @@ public class ScenarioExecutor
     };
 
     public ScenarioExecutor(IServiceScopeFactory scopes, SourceReaderFactory readers,
-        TargetConnectorRegistry connectors, ISecretProtector secrets, ILogger<ScenarioExecutor> log)
+        SourceConnectorRegistry sourceConnectors, TargetConnectorRegistry connectors,
+        ISecretProtector secrets, ILogger<ScenarioExecutor> log)
     {
-        _scopes = scopes; _readers = readers; _connectors = connectors; _secrets = secrets; _log = log;
+        _scopes = scopes; _readers = readers; _sourceConnectors = sourceConnectors;
+        _connectors = connectors; _secrets = secrets; _log = log;
     }
 
     public async Task ExecuteAsync(string runId, CancellationToken ct)
@@ -95,8 +98,17 @@ public class ScenarioExecutor
                         .Select(i => i.RowNumber).ToListAsync(ct)).ToHashSet();
             }
 
-            var handle = BuildHandle(scenario, srcConn, _secrets);
-            var groups = GroupRows(_readers.Get(scenario.SourceKind).ReadAll(handle), spec.GroupBy);
+            // Connection-backed sources (e.g. REST/OData) read through a source connector; file/SQL
+            // sources keep the existing reader + handle path.
+            IEnumerable<Dictionary<string, object?>> sourceRows;
+            if (srcConn != null && _sourceConnectors.Has(srcConn.Kind) &&
+                scenario.SourceKind.Equals("rest", StringComparison.OrdinalIgnoreCase))
+                sourceRows = _sourceConnectors.Get(srcConn.Kind)
+                    .ReadAll(srcConn, scenario.SourceObject ?? "", scenario.SourceQuery);
+            else
+                sourceRows = _readers.Get(scenario.SourceKind).ReadAll(BuildHandle(scenario, srcConn, _secrets));
+
+            var groups = GroupRows(sourceRows, spec.GroupBy);
 
             var keyProp = entity.Properties.FirstOrDefault(p => p.IsKey)?.Name ?? entity.Properties[0].Name;
             var pending = new List<(RunItem item, string json, string method, string? keyPredicate)>();

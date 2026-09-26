@@ -5,6 +5,7 @@ using B1DataImporter.Api.Models;
 using B1DataImporter.Api.Services;
 using B1DataImporter.Api.Services.Ai;
 using B1DataImporter.Api.Services.B1;
+using B1DataImporter.Api.Services.Connectors;
 using B1DataImporter.Api.Services.Connectors.B1;
 using B1DataImporter.Api.Services.Jobs;
 using Microsoft.EntityFrameworkCore;
@@ -49,11 +50,18 @@ public static class ScenarioEndpoints
 
         // Preview the source rows a scenario would read.
         g.MapPost("/preview", async (PreviewRequest req, AppDbContext db,
-            ISecretProtector secrets, SourceReaderFactory readers) =>
+            ISecretProtector secrets, SourceReaderFactory readers,
+            SourceConnectorRegistry sourceConnectors) =>
         {
             try
             {
                 var conn = req.ConnectionId is null ? null : await db.Connections.FindAsync(req.ConnectionId);
+                // Connection-backed sources (REST/OData) inspect through a source connector.
+                if (req.SourceKind.Equals("rest", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (conn is null) return Results.BadRequest(new { message = "A REST source needs a connection." });
+                    return Results.Ok(sourceConnectors.Get(conn.Kind).Inspect(conn, req.Object ?? ""));
+                }
                 var handle = new SourceHandle
                 {
                     SourceType = req.SourceKind,

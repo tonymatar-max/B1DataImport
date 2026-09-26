@@ -21,10 +21,15 @@ names a specific system.
 
 ## Layers
 
-### Source (already generic)
-`Services/SourceReaders.cs` — `ISourceReader { Inspect, ReadAll }` with Excel / CSV / SQL
-implementations behind `SourceReaderFactory`. Everything downstream consumes a uniform
-`Dictionary<string, object?>` per row, so adding a source type is one reader class.
+### Source
+Two paths, both yielding a uniform `Dictionary<string, object?>` per row:
+- **File/SQL** — `Services/SourceReaders.cs`: `ISourceReader { Inspect, ReadAll }` with Excel / CSV /
+  SQL implementations behind `SourceReaderFactory` (handle-based, no auth).
+- **Connection-backed (`ISourceConnector`)** — `Services/Connectors/ISourceConnector.cs` +
+  `SourceConnectorRegistry`, the read counterpart of `ITargetConnector`. `RestSourceConnector`
+  pulls from a manifest-driven REST/OData API (paged via `@odata.nextLink`), so a scenario can read
+  from an API and write to B1 (or any target). The executor uses the source connector when the
+  source is a REST connection, and the reader path otherwise.
 
 ### Mapping engine (generic)
 - `Domain/MappingSpec.cs` — the mapping DSL: `MappingSpec` (header fields, line collections,
@@ -113,6 +118,6 @@ curved SVG connectors; click a field to edit its transform).
 5. **Neutralize metadata naming** — rename `B1Entity`/`B1Property` → `TargetEntity`/`TargetProperty`
    and drive coercion/validation off `TargetType` directly instead of the `Edm.*` bridge.
 6. **Parameterize the AI mapper** — feed target-supplied vocabulary so AI mapping works per connector.
-7. **Symmetric source connectors** — an `ISourceConnector` mirroring the target seam, so a flow is
-   just *source connector → mapping → target connector*.
-8. **Visual flow builder** — a node canvas over the scenario model once both sides are connector-driven.
+7. **✅ Symmetric source connectors** — `ISourceConnector` mirrors the target seam; `RestSourceConnector`
+   pulls from a REST/OData API. A flow can now be *REST source → mapping → any target*.
+8. **Visual flow builder** — a node canvas over the scenario model, now that both sides are connector-driven.

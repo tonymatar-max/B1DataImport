@@ -60,6 +60,52 @@ public class RestApiClient : IDisposable
         return arr[0].TryGetProperty(select, out var cell) ? cell.ToString() : null;
     }
 
+    /// <summary>
+    /// Read rows from an entity set, following OData <c>@odata.nextLink</c> paging. An optional
+    /// <paramref name="filter"/> is applied as <c>$filter</c>; <paramref name="max"/> caps the total.
+    /// Each row is a property→CLR-value dictionary the mapping engine can consume.
+    /// </summary>
+    public async Task<List<Dictionary<string, object?>>> QueryRowsAsync(
+        string entity, string? filter, int max, CancellationToken ct)
+    {
+        var rows = new List<Dictionary<string, object?>>();
+        var url = entity + (string.IsNullOrWhiteSpace(filter) ? "" : $"?$filter={Uri.EscapeDataString(filter)}");
+        while (url != null && rows.Count < max)
+        {
+            using var resp = await _http.GetAsync(url, ct);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode)
+                throw new InvalidOperationException(Error(resp.StatusCode, body));
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var arr = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("value", out var v) ? v : root;
+            if (arr.ValueKind == JsonValueKind.Array)
+                foreach (var el in arr.EnumerateArray())
+                {
+                    if (rows.Count >= max) break;
+                    if (el.ValueKind != JsonValueKind.Object) continue;
+                    var row = new Dictionary<string, object?>();
+                    foreach (var prop in el.EnumerateObject())
+                        if (!prop.Name.StartsWith("@odata")) row[prop.Name] = JsonToClr(prop.Value);
+                    rows.Add(row);
+                }
+            // Follow server-driven paging; nextLink may be absolute or relative.
+            url = root.ValueKind == JsonValueKind.Object &&
+                  root.TryGetProperty("@odata.nextLink", out var nl) ? nl.GetString() : null;
+        }
+        return rows;
+    }
+
+    private static object? JsonToClr(JsonElement e) => e.ValueKind switch
+    {
+        JsonValueKind.String => e.GetString(),
+        JsonValueKind.Number => e.TryGetInt64(out var l) ? l : e.GetDouble(),
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.Null => null,
+        _ => e.ToString(),
+    };
+
     public async Task<bool> ExistsAsync(string entity, string keyPredicate, CancellationToken ct)
     {
         using var resp = await _http.GetAsync($"{entity}({keyPredicate})", ct);
