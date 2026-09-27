@@ -39,5 +39,12 @@ public static class SettingsEndpoints
             await store.SetSecretAsync(SettingsStore.AnthropicApiKey, input.AnthropicApiKey);
             return Results.Ok(new { ok = true });
         });
+
+        // Validate the saved AI key/provider with a lightweight live check.
+        app.MapPost("/api/settings/test-ai", async (AiMappingService ai) =>
+        {
+            var (ok, message) = await ai.TestAsync();
+            return ok ? Results.Ok(new { ok, message }) : Results.BadRequest(new { ok, message });
+        });
     }
 }

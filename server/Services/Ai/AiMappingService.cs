@@ -82,6 +82,57 @@ public class AiMappingService
         return (r.Configured, r.Info);
     }
 
+    /// <summary>Validate the configured key/provider with a lightweight live check.</summary>
+    public async Task<(bool ok, string message)> TestAsync(CancellationToken ct = default)
+    {
+        var r = await ResolveAsync(ct);
+        if (!r.Configured)
+            return (false, "No API key configured.");
+
+        try
+        {
+            if (r.Provider == "openrouter")
+            {
+                // GET /key validates the key without spending tokens on a completion.
+                using var req = new HttpRequestMessage(HttpMethod.Get, "https://openrouter.ai/api/v1/key");
+                req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {r.OpenRouterKey}");
+                using var resp = await _http.SendAsync(req, ct);
+                var raw = await resp.Content.ReadAsStringAsync(ct);
+                if (!resp.IsSuccessStatusCode)
+                    return (false, $"OpenRouter rejected the key ({(int)resp.StatusCode}).");
+
+                string? label = null; double? limit = null, usage = null;
+                try
+                {
+                    var d = JsonDocument.Parse(raw).RootElement.GetProperty("data");
+                    if (d.TryGetProperty("label", out var l)) label = l.GetString();
+                    if (d.TryGetProperty("limit", out var li) && li.ValueKind == JsonValueKind.Number) limit = li.GetDouble();
+                    if (d.TryGetProperty("usage", out var u) && u.ValueKind == JsonValueKind.Number) usage = u.GetDouble();
+                }
+                catch { /* label/usage are best-effort */ }
+
+                var extra = label != null ? $" ({label})" : "";
+                if (limit != null) extra += $", usage ${usage:0.###}/${limit:0.###}";
+                return (true, $"OpenRouter key OK{extra}. Primary model: {r.Models[0]}"
+                              + (r.Models.Count > 1 ? $" (+{r.Models.Count - 1} fallback)." : "."));
+            }
+
+            // Anthropic: a 1-token message is the cheapest live check.
+            var client = new AnthropicClient { ApiKey = r.AnthropicKey };
+            await client.Messages.Create(new MessageCreateParams
+            {
+                Model = "claude-opus-5",
+                MaxTokens = 1,
+                Messages = [new() { Role = Role.User, Content = "ping" }],
+            }, cancellationToken: ct);
+            return (true, "Anthropic key OK.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Key test failed: {ex.Message}");
+        }
+    }
+
     public async Task<AiMappingProposal> ProposeAsync(
         SourceSchema source, TargetEntity entity, CancellationToken ct = default)
     {

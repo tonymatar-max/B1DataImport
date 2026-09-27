@@ -12,6 +12,7 @@ export default function Settings({ onSaved }: { onSaved?: () => void }) {
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const load = () => api.getSettings().then(s => {
     setProvider(s.provider); setModel(s.model); setStatus(s)
@@ -30,6 +31,14 @@ export default function Settings({ onSaved }: { onSaved?: () => void }) {
       await load()
       onSaved?.()
     } catch (e) { setErr(msg(e)) } finally { setBusy(false) }
+  }
+
+  const test = async () => {
+    setBusy(true); setErr(''); setTestMsg(null)
+    try {
+      const r = await api.testAi()
+      setTestMsg({ ok: true, text: r.message })
+    } catch (e) { setTestMsg({ ok: false, text: msg(e) }) } finally { setBusy(false) }
   }
 
   return (
@@ -93,7 +102,12 @@ export default function Settings({ onSaved }: { onSaved?: () => void }) {
           (<span className="mono">OPENROUTER_API_KEY</span>) still work as a fallback.
         </div>
 
+        {testMsg && (
+          <div className={`alert ${testMsg.ok ? 'ok' : 'err'}`} style={{ marginTop: 10 }}>{testMsg.text}</div>
+        )}
+
         <div className="actions">
+          <button className="ghost" disabled={busy} onClick={test}>Test key</button>
           <button className="primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
         </div>
       </div>

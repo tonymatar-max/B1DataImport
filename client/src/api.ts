@@ -27,6 +27,7 @@ export const api = {
   saveSettings: (body: {
     provider?: string; model?: string; openRouterApiKey?: string; anthropicApiKey?: string
   }) => req<{ ok: boolean }>('/api/settings', json('PUT', body)),
+  testAi: () => req<{ ok: boolean; message: string }>('/api/settings/test-ai', { method: 'POST' }),
   dashboard: () => req<Dashboard>('/api/dashboard'),
 
   // Connections
