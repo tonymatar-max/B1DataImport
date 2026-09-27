@@ -18,26 +18,125 @@ public record FieldNote(string TargetField, string Confidence, string Reason);
 public class AiMappingService
 {
     private readonly ILogger<AiMappingService> _log;
-    private readonly string? _apiKey;
+    private readonly IConfiguration _config;
+    private readonly IServiceScopeFactory _scopes;
+    private readonly HttpClient _http;
 
-    public AiMappingService(IConfiguration config, ILogger<AiMappingService> log)
+    public AiMappingService(IConfiguration config, IServiceScopeFactory scopes, ILogger<AiMappingService> log)
     {
         _log = log;
-        _apiKey = config["Anthropic:ApiKey"]
-                  ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        _config = config;
+        _scopes = scopes;
+        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
+    private const string DefaultModel = "anthropic/claude-3.5-sonnet";
+
+    /// <summary>Effective AI config, resolved fresh each call: DB settings win, then appsettings, then env.</summary>
+    private sealed record Resolved(string Provider, string? OpenRouterKey, IReadOnlyList<string> Models, string? AnthropicKey)
+    {
+        public bool Configured => Provider == "openrouter"
+            ? !string.IsNullOrWhiteSpace(OpenRouterKey)
+            : !string.IsNullOrWhiteSpace(AnthropicKey);
+        public string Info => Provider == "openrouter"
+            ? $"openrouter:{Models[0]}" + (Models.Count > 1 ? $" (+{Models.Count - 1} fallback)" : "")
+            : "anthropic:claude-opus-5";
+    }
+
+    /// <summary>Parse a models setting (newline- or comma-separated) into up to 3 model ids.</summary>
+    private static List<string> ParseModels(string? raw)
+    {
+        var models = (raw ?? "")
+            .Split(new[] { '\n', '\r', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct()
+            .Take(3)   // OpenRouter fallback list limit
+            .ToList();
+        return models.Count > 0 ? models : new List<string> { DefaultModel };
+    }
+
+    private async Task<Resolved> ResolveAsync(CancellationToken ct)
+    {
+        using var scope = _scopes.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<SettingsStore>();
+
+        var orKey = await store.GetSecretAsync(SettingsStore.OpenRouterApiKey, ct)
+                    ?? _config["OpenRouter:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+        var anthKey = await store.GetSecretAsync(SettingsStore.AnthropicApiKey, ct)
+                      ?? _config["Anthropic:ApiKey"] ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        var models = ParseModels(
+            await store.GetAsync(SettingsStore.OpenRouterModel, ct)
+            ?? _config["OpenRouter:Model"] ?? Environment.GetEnvironmentVariable("OPENROUTER_MODEL"));
+        var provider = (await store.GetAsync(SettingsStore.AiProvider, ct)
+                        ?? _config["Ai:Provider"] ?? Environment.GetEnvironmentVariable("AI_PROVIDER"))
+                       ?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(provider) || provider == "auto")
+            provider = !string.IsNullOrWhiteSpace(orKey) ? "openrouter" : "anthropic";
+
+        return new Resolved(provider, orKey, models, anthKey);
+    }
+
+    /// <summary>Whether AI mapping can run, and the active provider:model — for /api/health and the UI.</summary>
+    public async Task<(bool configured, string provider)> GetStatusAsync(CancellationToken ct = default)
+    {
+        var r = await ResolveAsync(ct);
+        return (r.Configured, r.Info);
+    }
 
     public async Task<AiMappingProposal> ProposeAsync(
-        SourceSchema source, B1Entity entity, CancellationToken ct = default)
+        SourceSchema source, TargetEntity entity, CancellationToken ct = default)
     {
-        if (!IsConfigured)
+        var r = await ResolveAsync(ct);
+        if (!r.Configured)
             throw new InvalidOperationException(
-                "No Anthropic API key configured. Set ANTHROPIC_API_KEY or Anthropic:ApiKey.");
+                "No AI API key configured. Set it in Settings, or via OPENROUTER_API_KEY / ANTHROPIC_API_KEY.");
 
-        var client = new AnthropicClient { ApiKey = _apiKey };
+        var json = r.Provider == "openrouter"
+            ? await CallOpenRouterAsync(r, BuildUserPrompt(source, entity), ct)
+            : await CallAnthropicAsync(r, BuildUserPrompt(source, entity), ct);
+        return Parse(json);
+    }
 
+    /// <summary>OpenRouter (OpenAI-compatible chat completions), JSON-object response.</summary>
+    private async Task<string> CallOpenRouterAsync(Resolved r, string userPrompt, CancellationToken ct)
+    {
+        var messages = new object[]
+        {
+            new { role = "system", content = SystemPrompt },
+            new { role = "user", content = userPrompt + "\n\n" + JsonShapeHint },
+        };
+        // One model → "model"; several → OpenRouter's "models" fallback array (primary first, then
+        // the rest if it's down, rate-limited, or refuses).
+        // NOTE: we deliberately do NOT send response_format=json_object — many models (esp. free
+        // ones) don't support JSON mode and 400 on it, which would defeat the fallback list. The
+        // prompt already demands a bare JSON object, and the parser strips code fences.
+        object body = r.Models.Count > 1
+            ? new { models = r.Models, temperature = 0, max_tokens = 16000, messages }
+            : new { model = r.Models[0], temperature = 0, max_tokens = 16000, messages };
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/chat/completions")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
+        };
+        req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {r.OpenRouterKey}");
+        // Optional attribution headers OpenRouter recommends.
+        req.Headers.TryAddWithoutValidation("HTTP-Referer", "https://github.com/tonymatar-max/B1DataImport");
+        req.Headers.TryAddWithoutValidation("X-Title", "B1 Data Importer");
+
+        using var resp = await _http.SendAsync(req, ct);
+        var raw = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"OpenRouter error ({(int)resp.StatusCode}): {raw}");
+
+        using var doc = JsonDocument.Parse(raw);
+        var content = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()
+                      ?? throw new InvalidOperationException("OpenRouter returned an empty message.");
+        return StripFences(content);
+    }
+
+    /// <summary>Anthropic (native SDK, structured JSON output).</summary>
+    private async Task<string> CallAnthropicAsync(Resolved r, string userPrompt, CancellationToken ct)
+    {
+        var client = new AnthropicClient { ApiKey = r.AnthropicKey };
         var response = await client.Messages.Create(new MessageCreateParams
         {
             Model = "claude-opus-5",
@@ -48,12 +147,41 @@ public class AiMappingService
             {
                 new() { Text = SystemPrompt, CacheControl = new CacheControlEphemeral() },
             },
-            Messages = [new() { Role = Role.User, Content = BuildUserPrompt(source, entity) }],
+            Messages = [new() { Role = Role.User, Content = userPrompt }],
         }, cancellationToken: ct);
 
-        var json = string.Concat(response.Content.Select(b => b.Value).OfType<TextBlock>().Select(t => t.Text));
-        return Parse(json);
+        return string.Concat(response.Content.Select(b => b.Value).OfType<TextBlock>().Select(t => t.Text));
     }
+
+    /// <summary>Strip ```json fences some models wrap their output in, so JsonDocument can parse it.</summary>
+    private static string StripFences(string s)
+    {
+        s = s.Trim();
+        if (!s.StartsWith("```")) return s;
+        var firstNl = s.IndexOf('\n');
+        if (firstNl < 0) return s;
+        s = s[(firstNl + 1)..];
+        var lastFence = s.LastIndexOf("```", StringComparison.Ordinal);
+        return (lastFence >= 0 ? s[..lastFence] : s).Trim();
+    }
+
+    private const string JsonShapeHint = """
+        Respond with ONLY a JSON object (no prose, no code fences) of exactly this shape:
+        {
+          "summary": "string",
+          "groupBy": "string or null",
+          "sourceKeyColumn": "string or null",
+          "header": [ {
+            "targetField": "string", "sourceColumn": "string or null",
+            "transform": "Direct|Constant|Expression|DateFormat|StaticLookup|B1Lookup",
+            "constantValue": "string or null", "expression": "string or null",
+            "dateFormat": "string or null", "staticLookup": { "from": "to" } or null,
+            "b1Lookup": { "entity": "string", "matchField": "string", "returnField": "string" } or null,
+            "confidence": "high|medium|low", "reason": "string"
+          } ],
+          "lines": [ { "targetCollection": "string", "fields": [ /* same field shape as header */ ] } ]
+        }
+        """;
 
     private const string SystemPrompt = """
         You map source data (from Excel, CSV or SQL) onto SAP Business One Service Layer objects.
@@ -88,7 +216,7 @@ public class AiMappingService
         Prefer leaving a field unmapped over guessing badly.
         """;
 
-    private static string BuildUserPrompt(SourceSchema source, B1Entity entity)
+    private static string BuildUserPrompt(SourceSchema source, TargetEntity entity)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# Source: {source.ObjectName} ({source.SourceType})");

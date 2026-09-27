@@ -9,7 +9,7 @@ namespace B1DataImporter.Api.Services.B1;
 /// </summary>
 public class PayloadValidator
 {
-    public List<string> Validate(Dictionary<string, object?> payload, B1Entity entity, HashSet<string> explicitlyRequired)
+    public List<string> Validate(Dictionary<string, object?> payload, TargetEntity entity, HashSet<string> explicitlyRequired)
     {
         var errors = new List<string>();
         ValidateLevel(payload, entity.Properties, explicitlyRequired, "", errors);
@@ -25,7 +25,7 @@ public class PayloadValidator
     }
 
     private static void ValidateLevel(
-        Dictionary<string, object?> obj, List<B1Property> props,
+        Dictionary<string, object?> obj, List<TargetProperty> props,
         HashSet<string> explicitlyRequired, string prefix, List<string> errors)
     {
         foreach (var p in props)

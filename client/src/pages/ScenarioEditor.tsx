@@ -8,7 +8,7 @@ import type {
 } from '../types'
 
 const kindName = (k: ConnectionDef['kind']) =>
-  typeof k === 'number' ? ['SapB1', 'SqlServer', 'File'][k] ?? '' : k
+  typeof k === 'number' ? ['SapB1', 'SqlServer', 'File', 'Rest'][k] ?? '' : k
 
 const emptySpec: MappingSpec = { header: [], lines: [] }
 
@@ -70,6 +70,7 @@ export default function ScenarioEditor({ id, go, aiOn }: {
   const [notes, setNotes] = useState<FieldNote[]>([])
   const [aiSummary, setAiSummary] = useState('')
   const [tables, setTables] = useState<string[]>([])
+  const [srcEntities, setSrcEntities] = useState<EntitySummary[]>([])
   const [tab, setTab] = useState<typeof TABS[number]>('Source')
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
@@ -107,6 +108,12 @@ export default function ScenarioEditor({ id, go, aiOn }: {
     api.entity(s.b1ConnectionId, s.targetEntity).then(e => { setEntity(e); setErr('') }).catch(e => setErr(msg(e)))
   }, [s?.b1ConnectionId, s?.targetEntity])
 
+  // For a REST source, discover the source system's objects to pull from.
+  useEffect(() => {
+    if (s?.sourceKind !== 'rest' || !s?.sourceConnectionId) { setSrcEntities([]); return }
+    api.entities(s.sourceConnectionId).then(es => { setSrcEntities(es); setErr('') }).catch(e => setErr(msg(e)))
+  }, [s?.sourceKind, s?.sourceConnectionId])
+
   if (!s) return <div className="alert info">Loading…</div>
   const set = (patch: Partial<Scenario>) => setS({ ...s, ...patch })
   const setFreq = (patch: Partial<typeof freq>) => {
@@ -115,8 +122,10 @@ export default function ScenarioEditor({ id, go, aiOn }: {
     if (next.freq !== 'custom') set({ cronExpression: buildCron(next.freq, next) })
   }
 
-  const b1Conns = conns.filter(c => kindName(c.kind) === 'SapB1')
+  // Any writable target: SAP B1 or a manifest-driven REST/OData connector.
+  const targetConns = conns.filter(c => ['SapB1', 'Rest'].includes(kindName(c.kind)))
   const sqlConns = conns.filter(c => kindName(c.kind) === 'SqlServer')
+  const restConns = conns.filter(c => kindName(c.kind) === 'Rest')
 
   const loadTables = async () => {
     setBusy('tables'); setErr('')
@@ -179,7 +188,7 @@ export default function ScenarioEditor({ id, go, aiOn }: {
       <div className="page-head">
         <div>
           <h1>{s.name || (id === 'new' ? 'New scenario' : 'Untitled scenario')}</h1>
-          <p>{s.sourceKind} → {s.targetEntity || 'choose a B1 object'}</p>
+          <p>{s.sourceKind} → {s.targetEntity || 'choose a target object'}</p>
         </div>
         <div className="actions" style={{ marginTop: 0 }}>
           <button className="ghost" onClick={() => go({ p: 'scenarios' })}>← Scenarios</button>
@@ -223,6 +232,7 @@ export default function ScenarioEditor({ id, go, aiOn }: {
                 <option value="sql">SQL Server</option>
                 <option value="excel">Excel</option>
                 <option value="csv">CSV</option>
+                <option value="rest">REST / OData</option>
               </select></div>
 
             {s.sourceKind === 'sql' && (
@@ -232,9 +242,18 @@ export default function ScenarioEditor({ id, go, aiOn }: {
                   {sqlConns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select></div>
             )}
+
+            {s.sourceKind === 'rest' && (
+              <div className="field grow"><label>Connection</label>
+                <select value={s.sourceConnectionId}
+                  onChange={e => set({ sourceConnectionId: e.target.value, sourceObject: '' })}>
+                  <option value="">— choose —</option>
+                  {restConns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select></div>
+            )}
           </div>
 
-          {s.sourceKind === 'sql' ? (
+          {s.sourceKind === 'sql' && (
             <>
               <div className="actions left">
                 <button className="ghost" disabled={!s.sourceConnectionId || busy === 'tables'} onClick={loadTables}>
@@ -253,7 +272,23 @@ export default function ScenarioEditor({ id, go, aiOn }: {
                   onChange={e => set({ sourceQuery: e.target.value, sourceObject: '' })}
                   placeholder="SELECT * FROM dbo.Customers WHERE Active = 1 ORDER BY ModifiedOn" /></div>
             </>
-          ) : (
+          )}
+
+          {s.sourceKind === 'rest' && (
+            <>
+              <div className="field"><label>Object to pull ({srcEntities.length} discovered)</label>
+                <select value={s.sourceObject ?? ''} onChange={e => set({ sourceObject: e.target.value })}
+                  disabled={!s.sourceConnectionId}>
+                  <option value="">— choose —</option>
+                  {srcEntities.map(e => <option key={e.name} value={e.name}>{e.name} — {e.fieldCount} fields</option>)}
+                </select></div>
+              <div className="field"><label>…optional OData $filter</label>
+                <input value={s.sourceQuery ?? ''} onChange={e => set({ sourceQuery: e.target.value })}
+                  placeholder="Rating gt 3 and Price lt 100" /></div>
+            </>
+          )}
+
+          {(s.sourceKind === 'excel' || s.sourceKind === 'csv') && (
             <div className="field"><label>Upload {s.sourceKind === 'csv' ? '.csv' : '.xlsx / .xls'}</label>
               <input type="file" accept=".xlsx,.xls,.csv" disabled={busy === 'upload'}
                 onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
@@ -290,10 +325,14 @@ export default function ScenarioEditor({ id, go, aiOn }: {
       {tab === 'Target' && (
         <div className="panel">
           <div className="row">
-            <div className="field grow"><label>SAP B1 connection</label>
+            <div className="field grow"><label>Target connection</label>
               <select value={s.b1ConnectionId} onChange={e => set({ b1ConnectionId: e.target.value, targetEntity: '' })}>
                 <option value="">— choose —</option>
-                {b1Conns.map(c => <option key={c.id} value={c.id}>{c.name} ({c.companyDB})</option>)}
+                {targetConns.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}{c.companyDB ? ` (${c.companyDB})` : ` · ${kindName(c.kind)}`}
+                  </option>
+                ))}
               </select></div>
             <div className="field grow"><label>Target object ({entities.length} discovered)</label>
               <select value={s.targetEntity} onChange={e => set({ targetEntity: e.target.value })}>
@@ -352,7 +391,7 @@ export default function ScenarioEditor({ id, go, aiOn }: {
                 </div>
                 <div className="actions" style={{ marginTop: 0 }}>
                   <button className="primary" disabled={!aiOn || busy === 'ai'} onClick={propose}
-                    title={aiOn ? 'Let Claude propose the mapping' : 'Set ANTHROPIC_API_KEY to enable'}>
+                    title={aiOn ? 'Let AI propose the mapping' : 'Set OPENROUTER_API_KEY to enable'}>
                     {busy === 'ai' ? 'Thinking…' : '✦ Propose mapping with AI'}
                   </button>
                 </div>

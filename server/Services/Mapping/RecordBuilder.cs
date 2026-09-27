@@ -20,7 +20,7 @@ public class RecordBuilder
     public async Task<BuildOutcome> BuildAsync(
         MappingSpec spec,
         List<Dictionary<string, object?>> groupRows,
-        B1Entity entity,
+        TargetEntity entity,
         Connectors.ITargetLookup? lookups,
         CancellationToken ct = default)
     {
@@ -165,7 +165,7 @@ public class RecordBuilder
     }
 
     /// <summary>Convert the string into the JSON type the B1 property expects.</summary>
-    private static object? Coerce(string? value, B1Property? prop)
+    private static object? Coerce(string? value, TargetProperty? prop)
     {
         if (string.IsNullOrEmpty(value)) return null;
         if (prop is null) return value;

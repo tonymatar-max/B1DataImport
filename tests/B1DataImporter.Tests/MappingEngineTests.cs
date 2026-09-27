@@ -28,7 +28,7 @@ public class MappingEngineTests
     [Fact]
     public async Task Builds_payload_with_direct_expression_and_lookup_transforms()
     {
-        var entity = ProductEntity().ToB1Entity();
+        var entity = ProductEntity().ToTargetEntity();
         var spec = new MappingSpec
         {
             Header =
@@ -62,7 +62,7 @@ public class MappingEngineTests
     [Fact]
     public async Task Failing_required_lookup_reports_error_not_throw()
     {
-        var entity = ProductEntity().ToB1Entity();
+        var entity = ProductEntity().ToTargetEntity();
         var spec = new MappingSpec
         {
             Header =

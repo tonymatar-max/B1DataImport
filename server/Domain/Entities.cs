@@ -2,6 +2,15 @@ using System.ComponentModel.DataAnnotations;
 
 namespace B1DataImporter.Api.Domain;
 
+// ============================================================ App settings
+
+/// <summary>A single persisted app setting (key/value). Secret values are stored encrypted.</summary>
+public class AppSetting
+{
+    [Key] public string Key { get; set; } = "";
+    public string? Value { get; set; }
+}
+
 // ============================================================ Connections
 
 public enum ConnectionKind { SapB1, SqlServer, File, Rest }

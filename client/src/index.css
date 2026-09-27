@@ -143,3 +143,46 @@ tr.click:hover { background: #f7f9fc; cursor: pointer; }
 
 .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
 .empty h3 { margin: 0 0 6px; color: var(--text); font-size: 14px; text-transform: none; letter-spacing: 0; }
+
+/* ---------- visual mapper (connect-the-lines) ---------- */
+.viewtoggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.viewtoggle button { border: none; border-radius: 0; padding: 5px 12px; font-size: 12px;
+  background: #fff; color: var(--muted); }
+.viewtoggle button.on { background: var(--brand); color: #fff; }
+
+.vmap-outer { position: relative; }
+.vmap-legend { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.vmap-count { margin-left: auto; font-weight: 700; color: var(--brand-dark);
+  background: var(--chip); border-radius: 20px; padding: 1px 9px; }
+.vmap { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 120px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: #fcfdfe; }
+.vmap-svg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.vmap-edge path { stroke: var(--brand); stroke-width: 2; fill: none; opacity: .5; transition: opacity .12s; }
+.vmap-edge circle { fill: var(--brand); opacity: .5; transition: opacity .12s; }
+.vmap-edge.hot path { stroke: var(--brand-dark); stroke-width: 2.5; opacity: 1; }
+.vmap-edge.hot circle { fill: var(--brand-dark); opacity: 1; }
+.vmap-edge.dim path, .vmap-edge.dim circle { opacity: .14; }
+
+.vmap-col { display: flex; flex-direction: column; gap: 7px; position: relative; z-index: 1; }
+.vmap-col .hd { font-weight: 600; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+
+.vchip { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 7px;
+  padding: 7px 10px; background: #fff; position: relative; }
+.vchip .nm { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+.vchip .s { font-size: 10.5px; color: var(--muted); margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vchip.src { cursor: grab; }
+.vchip.src:active { cursor: grabbing; }
+.vchip.src:hover, .vchip.src.hot { border-color: var(--brand); background: #f4f9ff; }
+.vchip.tgt { cursor: pointer; }
+.vchip.tgt.mapped { border-color: var(--brand); background: #f4f9ff; }
+.vchip.tgt.sel { border-color: var(--brand-dark); box-shadow: 0 0 0 2px rgba(10,110,209,.15); }
+.vchip.tgt.over { border-color: var(--brand); border-style: dashed; background: #eaf2fb; }
+.vchip.tgt.need { border-left: 3px solid var(--err); }
+.vchip .x { position: absolute; top: 5px; right: 6px; width: 18px; height: 18px; padding: 0;
+  border-radius: 50%; border: none; background: #eef1f5; color: var(--muted); font-size: 14px;
+  line-height: 1; display: grid; place-items: center; }
+.vchip .x:hover { background: #fbe8e8; color: var(--err); }
+
+.vmap-editor { margin-top: 14px; }

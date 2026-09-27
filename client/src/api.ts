@@ -1,5 +1,5 @@
 import type {
-  B1Entity, ConnectionDef, Dashboard, EntitySummary, FieldNote,
+  B1Entity, ConnectionDef, ConnectorsResponse, Dashboard, EntitySummary, FieldNote,
   MappingSpec, Run, RunItem, Scenario, SourceSchema,
 } from './types'
 
@@ -17,10 +17,20 @@ const json = (method: string, body: unknown): RequestInit => ({
 })
 
 export const api = {
-  health: () => req<{ ok: boolean; aiConfigured: boolean }>('/api/health'),
+  health: () => req<{ ok: boolean; aiConfigured: boolean; aiProvider?: string }>('/api/health'),
+
+  // Settings (AI provider + keys; keys are never returned)
+  getSettings: () => req<{
+    provider: string; model: string; hasOpenRouterKey: boolean; hasAnthropicKey: boolean
+    aiConfigured: boolean; activeProvider: string
+  }>('/api/settings'),
+  saveSettings: (body: {
+    provider?: string; model?: string; openRouterApiKey?: string; anthropicApiKey?: string
+  }) => req<{ ok: boolean }>('/api/settings', json('PUT', body)),
   dashboard: () => req<Dashboard>('/api/dashboard'),
 
   // Connections
+  connectors: () => req<ConnectorsResponse>('/api/connectors'),
   connections: () => req<ConnectionDef[]>('/api/connections'),
   createConnection: (c: unknown) => req<ConnectionDef>('/api/connections', json('POST', c)),
   updateConnection: (id: string, c: unknown) => req<ConnectionDef>(`/api/connections/${id}`, json('PUT', c)),

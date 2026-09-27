@@ -6,6 +6,7 @@ import Scenarios from './pages/Scenarios'
 import ScenarioEditor from './pages/ScenarioEditor'
 import Runs from './pages/Runs'
 import RunDetail from './pages/RunDetail'
+import Settings from './pages/Settings'
 
 export type View =
   | { p: 'dashboard' }
@@ -14,19 +15,22 @@ export type View =
   | { p: 'scenario'; id: string | 'new' }
   | { p: 'runs' }
   | { p: 'run'; id: string }
+  | { p: 'settings' }
 
 const NAV = [
   { p: 'dashboard', icon: '◧', label: 'Dashboard' },
   { p: 'scenarios', icon: '⇄', label: 'Scenarios' },
   { p: 'runs', icon: '≡', label: 'Runs' },
   { p: 'connections', icon: '⚯', label: 'Connections' },
+  { p: 'settings', icon: '⚙', label: 'Settings' },
 ] as const
 
 export default function App() {
   const [view, setView] = useState<View>({ p: 'dashboard' })
   const [aiOn, setAiOn] = useState(false)
 
-  useEffect(() => { api.health().then(h => setAiOn(h.aiConfigured)).catch(() => {}) }, [])
+  const refreshAi = () => api.health().then(h => setAiOn(h.aiConfigured)).catch(() => {})
+  useEffect(() => { refreshAi() }, [])
 
   return (
     <div className="shell">
@@ -43,7 +47,7 @@ export default function App() {
             </a>
           ))}
         </nav>
-        <div className="foot">{aiOn ? 'AI mapping ready' : 'AI mapping off — set ANTHROPIC_API_KEY'}</div>
+        <div className="foot">{aiOn ? 'AI mapping ready' : 'AI mapping off — set OPENROUTER_API_KEY'}</div>
       </aside>
 
       <main className="main">
@@ -53,6 +57,7 @@ export default function App() {
         {view.p === 'scenario' && <ScenarioEditor id={view.id} go={setView} aiOn={aiOn} />}
         {view.p === 'runs' && <Runs go={setView} />}
         {view.p === 'run' && <RunDetail id={view.id} go={setView} />}
+        {view.p === 'settings' && <Settings onSaved={refreshAi} />}
       </main>
     </div>
   )

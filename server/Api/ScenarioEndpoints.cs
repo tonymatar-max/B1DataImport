@@ -5,6 +5,7 @@ using B1DataImporter.Api.Models;
 using B1DataImporter.Api.Services;
 using B1DataImporter.Api.Services.Ai;
 using B1DataImporter.Api.Services.B1;
+using B1DataImporter.Api.Services.Connectors;
 using B1DataImporter.Api.Services.Connectors.B1;
 using B1DataImporter.Api.Services.Jobs;
 using Microsoft.EntityFrameworkCore;
@@ -49,11 +50,18 @@ public static class ScenarioEndpoints
 
         // Preview the source rows a scenario would read.
         g.MapPost("/preview", async (PreviewRequest req, AppDbContext db,
-            ISecretProtector secrets, SourceReaderFactory readers) =>
+            ISecretProtector secrets, SourceReaderFactory readers,
+            SourceConnectorRegistry sourceConnectors) =>
         {
             try
             {
                 var conn = req.ConnectionId is null ? null : await db.Connections.FindAsync(req.ConnectionId);
+                // Connection-backed sources (REST/OData) inspect through a source connector.
+                if (req.SourceKind.Equals("rest", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (conn is null) return Results.BadRequest(new { message = "A REST source needs a connection." });
+                    return Results.Ok(sourceConnectors.Get(conn.Kind).Inspect(conn, req.Object ?? ""));
+                }
                 var handle = new SourceHandle
                 {
                     SourceType = req.SourceKind,
@@ -71,17 +79,17 @@ public static class ScenarioEndpoints
 
         // Ask Claude to propose the mapping.
         g.MapPost("/ai-propose", async (AiProposeRequest req, AppDbContext db,
-            ISecretProtector secrets, MetadataService meta, AiMappingService ai) =>
+            TargetConnectorRegistry registry, AiMappingService ai) =>
         {
-            if (!ai.IsConfigured)
-                return Results.BadRequest(new { message = "No Anthropic API key configured (ANTHROPIC_API_KEY)." });
+            if (!(await ai.GetStatusAsync()).configured)
+                return Results.BadRequest(new { message = "No AI API key configured. Set it in Settings, or via OPENROUTER_API_KEY / ANTHROPIC_API_KEY." });
             var c = await db.Connections.FindAsync(req.ConnectionId);
             if (c is null) return Results.NotFound();
+            if (!registry.Has(c.Kind)) return Results.BadRequest(new { message = $"{c.Kind} is not a writable target." });
             try
             {
-                using var client = new ServiceLayerClient(B1TargetConnector.ToInfo(c, secrets));
-                await client.LoginAsync();
-                var entities = meta.Parse(await client.GetMetadataAsync(), c.BaseUrl + "|" + c.CompanyDB);
+                using var session = await registry.Get(c.Kind).OpenAsync(c);
+                var entities = await session.GetEntitiesAsync();
                 var entity = entities.FirstOrDefault(e =>
                     e.Name.Equals(req.TargetEntity, StringComparison.OrdinalIgnoreCase));
                 if (entity is null) return Results.NotFound();

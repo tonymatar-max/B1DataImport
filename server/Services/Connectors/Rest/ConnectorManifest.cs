@@ -19,8 +19,8 @@ public class ConnectorManifest
     public ManifestEntity? FindEntity(string name)
         => Entities.FirstOrDefault(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Project the manifest's entities into the generic <see cref="B1Entity"/> metadata shape.</summary>
-    public List<B1Entity> ToEntities() => Entities.Select(e => e.ToB1Entity()).ToList();
+    /// <summary>Project the manifest's entities into the generic <see cref="TargetEntity"/> metadata shape.</summary>
+    public List<TargetEntity> ToEntities() => Entities.Select(e => e.ToTargetEntity()).ToList();
 }
 
 /// <summary>How to authenticate to the system. The secret/username come from the connection, not here.</summary>
@@ -40,7 +40,7 @@ public class ManifestEntity
     public List<ManifestField> Fields { get; set; } = new();
     public List<ManifestCollection> Collections { get; set; } = new();
 
-    public B1Entity ToB1Entity() => new()
+    public TargetEntity ToTargetEntity() => new()
     {
         Name = Name,
         EntityType = Name,
@@ -58,7 +58,7 @@ public class ManifestField
     public bool IsKey { get; set; }
     public List<string>? EnumMembers { get; set; }
 
-    public B1Property ToProperty(string entityKeyField) => new()
+    public TargetProperty ToProperty(string entityKeyField) => new()
     {
         Name = Name,
         Type = TargetTypes.ToEdm(TargetTypes.Parse(Type)),
@@ -75,7 +75,7 @@ public class ManifestCollection
     public string TargetEntity { get; set; } = "";
     public List<ManifestField> Fields { get; set; } = new();
 
-    public B1NavCollection ToNav() => new()
+    public TargetCollection ToNav() => new()
     {
         Name = Name,
         TargetEntity = TargetEntity,

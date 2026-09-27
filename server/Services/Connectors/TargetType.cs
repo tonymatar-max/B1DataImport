@@ -5,7 +5,7 @@ namespace B1DataImporter.Api.Services.Connectors;
 /// <summary>
 /// Neutral, system-independent field types the platform understands. Connectors describe their
 /// fields with these; the mapping engine's coercion/validation currently keys off the OData
-/// "Edm.*" type tags carried on <see cref="B1Property.Type"/>, so <see cref="ToEdm"/> bridges the
+/// "Edm.*" type tags carried on <see cref="TargetProperty.Type"/>, so <see cref="ToEdm"/> bridges the
 /// neutral vocabulary onto those existing tags without changing RecordBuilder/PayloadValidator.
 /// This keeps B1's own Edm.* metadata working while letting non-B1 connectors speak a clean type
 /// language in their manifests.

@@ -21,10 +21,15 @@ names a specific system.
 
 ## Layers
 
-### Source (already generic)
-`Services/SourceReaders.cs` — `ISourceReader { Inspect, ReadAll }` with Excel / CSV / SQL
-implementations behind `SourceReaderFactory`. Everything downstream consumes a uniform
-`Dictionary<string, object?>` per row, so adding a source type is one reader class.
+### Source
+Two paths, both yielding a uniform `Dictionary<string, object?>` per row:
+- **File/SQL** — `Services/SourceReaders.cs`: `ISourceReader { Inspect, ReadAll }` with Excel / CSV /
+  SQL implementations behind `SourceReaderFactory` (handle-based, no auth).
+- **Connection-backed (`ISourceConnector`)** — `Services/Connectors/ISourceConnector.cs` +
+  `SourceConnectorRegistry`, the read counterpart of `ITargetConnector`. `RestSourceConnector`
+  pulls from a manifest-driven REST/OData API (paged via `@odata.nextLink`), so a scenario can read
+  from an API and write to B1 (or any target). The executor uses the source connector when the
+  source is a REST connection, and the reader path otherwise.
 
 ### Mapping engine (generic)
 - `Domain/MappingSpec.cs` — the mapping DSL: `MappingSpec` (header fields, line collections,
@@ -96,14 +101,23 @@ neutral type mapping, manifest → metadata projection, manifest loading, the re
 mapping engine running end-to-end against manifest metadata with a fake lookup. Run with
 `dotnet test B1DataImporter.sln`.
 
+### Client
+`client/src/pages/`. The **Connections** page creates B1, SQL, and **REST/OData** connections
+(the REST form picks a manifest from `GET /api/connectors` and sets base URL + auth). The
+**scenario editor** lets any target connector (B1 or REST) be the target and discovers its entities
+through the same endpoint. The **mapper** (`Mapper.tsx`) has two views over the same `MappingSpec`:
+a **table** view and a **visual** connect-the-lines view (drag a source column onto a target field;
+curved SVG connectors; click a field to edit its transform).
+
 ## Roadmap toward the codeless platform
 1. **✅ Connector seam** — `ITargetConnector` / `ITargetSession`; B1 is the first connector.
 2. **✅ Manifest-driven REST connector** — new systems via JSON, proven by tests.
-3. **Neutralize metadata naming** — rename `B1Entity`/`B1Property` → `TargetEntity`/`TargetProperty`
+3. **✅ Connection UI for REST/manifest connectors** — pick a manifest, set base URL + auth; REST
+   connections are selectable scenario targets with entity discovery.
+4. **✅ Visual mapping** — connect-the-lines drag-and-drop view alongside the table mapper.
+5. **Neutralize metadata naming** — rename `B1Entity`/`B1Property` → `TargetEntity`/`TargetProperty`
    and drive coercion/validation off `TargetType` directly instead of the `Edm.*` bridge.
-4. **Parameterize the AI mapper** — feed target-supplied vocabulary so AI mapping works per connector.
-5. **Symmetric source connectors** — an `ISourceConnector` mirroring the target seam, so a flow is
-   just *source connector → mapping → target connector*.
-6. **Connection UI for REST/manifest connectors** — pick a manifest, set base URL + auth (the server
-   already supports `ConnectionKind.Rest`; the client form is B1/SQL/File only today).
-7. **Visual flow builder** — a React layer over the scenario model once both sides are connector-driven.
+6. **Parameterize the AI mapper** — feed target-supplied vocabulary so AI mapping works per connector.
+7. **✅ Symmetric source connectors** — `ISourceConnector` mirrors the target seam; `RestSourceConnector`
+   pulls from a REST/OData API. A flow can now be *REST source → mapping → any target*.
+8. **Visual flow builder** — a node canvas over the scenario model, now that both sides are connector-driven.

@@ -2,8 +2,15 @@
 server/bin/
 server/obj/
 server/wwwroot/
-server/data/uploads/
-server/data/
+# Runtime data lives in server/Data/ next to the source. Ignore ONLY the runtime
+# artifacts, never the source (e.g. AppDbContext.cs). Git is case-insensitive on
+# Windows, so a broad "server/data/" would also swallow "server/Data/*.cs".
+server/Data/*.db
+server/Data/*.db-shm
+server/Data/*.db-wal
+server/Data/keys/
+server/Data/uploads/
+server/Data/mappings/
 
 # Node / Vite
 client/node_modules/
