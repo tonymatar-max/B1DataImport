@@ -20,7 +20,7 @@ const newScenario = (): Scenario => ({
   trigger: 'Manual', continueOnError: true, batchSize: 20, useBatch: true, maxRetries: 2,
 })
 
-const TABS = ['Source', 'Target', 'Mapping', 'Schedule'] as const
+const TABS = ['Flow', 'Source', 'Target', 'Mapping', 'Schedule'] as const
 
 type Freq = 'instant' | 'minutes' | 'hourly' | 'daily' | 'weekly' | 'custom'
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -223,6 +223,12 @@ export default function ScenarioEditor({ id, go, aiOn }: {
           </div>
         ))}
       </div>
+
+      {tab === 'Flow' && (
+        <div className="panel">
+          <FlowView s={s} schema={schema} spec={spec} entity={entity} conns={conns} go={setTab} />
+        </div>
+      )}
 
       {tab === 'Source' && (
         <div className="panel">
@@ -520,6 +526,74 @@ export default function ScenarioEditor({ id, go, aiOn }: {
           </div>
         </div>
       )}
+    </>
+  )
+}
+
+// ---- Flow overview: source → mapping → target as connected nodes ----
+
+const isMapped = (f: { sourceColumn?: string | null; transform?: string; constantValue?: string | null; expression?: string | null }) =>
+  !!f.sourceColumn || (f.transform === 'Constant' && !!f.constantValue) || (f.transform === 'Expression' && !!f.expression)
+
+function FlowView({ s, schema, spec, entity, conns, go }: {
+  s: Scenario
+  schema: SourceSchema | null
+  spec: MappingSpec
+  entity: B1Entity | null
+  conns: ConnectionDef[]
+  go: (t: 'Source' | 'Target' | 'Mapping') => void
+}) {
+  const connName = (id?: string) => conns.find(c => c.id === id)?.name
+  const srcConn = connName(s.sourceConnectionId)
+  const tgtConn = connName(s.b1ConnectionId)
+
+  const sourceObject = s.sourceKind === 'sql'
+    ? (s.sourceObject || (s.sourceQuery ? 'custom query' : ''))
+    : (s.sourceObject || '')
+  const sourceOk = s.sourceKind === 'sql' ? !!(s.sourceObject || s.sourceQuery) : !!s.sourceObject
+
+  const mappedCount = spec.header.filter(isMapped).length +
+    spec.lines.flatMap(l => l.fields).filter(isMapped).length
+  const mandatoryUnmapped = entity
+    ? entity.properties.filter(p => !p.nullable && !p.isKey && !isMapped(spec.header.find(h => h.targetField === p.name) ?? {}))
+    : []
+
+  const targetOk = !!s.b1ConnectionId && !!s.targetEntity
+
+  return (
+    <>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        The scenario as a pipeline. Click a stage to edit it.
+      </p>
+      <div className="flow">
+        <div className={`flow-node ${sourceOk ? 'ok' : 'todo'}`} onClick={() => go('Source')}>
+          <div className="fn-h"><span className="fn-i">◇</span> Source</div>
+          <div className="fn-t">{s.sourceKind.toUpperCase()}</div>
+          <div className="fn-s">{srcConn ? `${srcConn}` : sourceObject || <span className="muted">not set</span>}</div>
+          {sourceObject && srcConn && <div className="fn-s muted">{sourceObject}</div>}
+          <div className="fn-s muted">{schema ? `${schema.columns.length} columns` : 'no preview yet'}</div>
+        </div>
+
+        <div className="flow-arrow">→</div>
+
+        <div className={`flow-node ${mappedCount > 0 ? 'ok' : 'todo'}`} onClick={() => go('Mapping')}>
+          <div className="fn-h"><span className="fn-i">⇄</span> Mapping</div>
+          <div className="fn-t">{mappedCount} field{mappedCount === 1 ? '' : 's'} mapped</div>
+          {spec.groupBy && <div className="fn-s muted">grouped by {spec.groupBy}</div>}
+          {mandatoryUnmapped.length > 0
+            ? <div className="fn-s warn-t">{mandatoryUnmapped.length} mandatory unmapped</div>
+            : entity && <div className="fn-s muted">all mandatory covered</div>}
+        </div>
+
+        <div className="flow-arrow">→</div>
+
+        <div className={`flow-node ${targetOk ? 'ok' : 'todo'}`} onClick={() => go('Target')}>
+          <div className="fn-h"><span className="fn-i">◆</span> Target</div>
+          <div className="fn-t">{s.targetEntity || <span className="muted">choose object</span>}</div>
+          <div className="fn-s">{tgtConn ? tgtConn : <span className="muted">no connection</span>}</div>
+          <div className="fn-s muted">{s.writeMode}{s.keyFields ? ` · key ${s.keyFields}` : ''}</div>
+        </div>
+      </div>
     </>
   )
 }

@@ -186,3 +186,19 @@ tr.click:hover { background: #f7f9fc; cursor: pointer; }
 .vchip .x:hover { background: #fbe8e8; color: var(--err); }
 
 .vmap-editor { margin-top: 14px; }
+
+/* ---------- flow overview ---------- */
+.flow { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+.flow-node { flex: 1; min-width: 180px; border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px; background: #fff; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.flow-node:hover { border-color: var(--brand); box-shadow: 0 1px 8px rgba(10,110,209,.10); }
+.flow-node.ok { border-left: 4px solid var(--ok); }
+.flow-node.todo { border-left: 4px solid var(--border); }
+.flow-node .fn-h { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; display: flex; align-items: center; gap: 6px; }
+.flow-node .fn-i { color: var(--brand); font-size: 13px; }
+.flow-node .fn-t { font-size: 15px; font-weight: 600; margin-top: 8px; word-break: break-word; }
+.flow-node .fn-s { font-size: 12px; margin-top: 3px; word-break: break-word; }
+.flow-node .fn-s.warn-t { color: var(--warn); font-weight: 600; }
+.flow-arrow { align-self: center; color: var(--muted); font-size: 22px; flex: 0 0 auto; }
+@media (max-width: 640px) { .flow-arrow { transform: rotate(90deg); } }
